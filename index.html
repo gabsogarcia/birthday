@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>SongWish — A Personalized Birthday Song</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;1,400;1,700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://js.stripe.com/v3/"></script>
+
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   Birthday song funnel — warm gold / deep navy palette
+   Signature: animated music note waveform in the progress bar
+   ============================================================ */
+:root {
+  --bg:          #FFFFFF;
+  --bg-warm:     #FFFBF5;
+  --gold:        #F5A623;
+  --gold-deep:   #D4891A;
+  --navy:        #1A2340;
+  --navy-mid:    #2C3A5E;
+  --text:        #1A2340;
+  --text-muted:  #6B7280;
+  --surface:     #F9F7F4;
+  --border:      #E8E3DC;
+  --success:     #16A34A;
+  --error:       #DC2626;
+  --gradient:    linear-gradient(135deg, #F5A623 0%, #D4891A 100%);
+  --gradient-soft: linear-gradient(135deg, #FDF3DF 0%, #FDE8C0 100%);
+  --shadow:      0 4px 24px rgba(245,166,35,0.28);
+  --shadow-card: 0 2px 16px rgba(26,35,64,0.08);
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+  --radius:       16px;
+  --radius-sm:    10px;
+  --radius-xs:    6px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; scroll-behavior: smooth; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  min-height: 100svh;
+}
+body.modal-open { overflow: hidden; position: fixed; width: 100%; }
+img { max-width: 100%; display: block; }
+button { cursor: pointer; border: none; outline: none; font-family: var(--font-body); }
+input, textarea, select { font-family: var(--font-body); outline: none; }
+a { text-decoration: none; color: inherit; }
+
+/* ============================================================
+   DEV TOOLBAR — visible only in dev mode
+   ============================================================ */
+#dev-toolbar {
+  position: fixed; bottom: 80px; right: 12px; z-index: 9999;
+  display: flex; flex-direction: column; gap: 6px;
+  background: rgba(26,35,64,0.92); border-radius: var(--radius-sm);
+  padding: 10px 12px; min-width: 210px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  backdrop-filter: blur(8px);
+}
+#dev-toolbar .dev-label {
+  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--gold); text-transform: uppercase; margin-bottom: 4px;
+}
+.dev-btn {
+  background: rgba(245,166,35,0.15); border: 1px solid rgba(245,166,35,0.35);
+  color: #fff; font-size: 11px; font-weight: 600;
+  padding: 6px 10px; border-radius: var(--radius-xs);
+  text-align: left; transition: background 0.15s;
+}
+.dev-btn:hover { background: rgba(245,166,35,0.3); }
+.dev-control {
+  width: 100%; border: 1px solid rgba(245,166,35,0.35);
+  border-radius: var(--radius-xs); padding: 6px 8px;
+  background: #202B49; color: #fff; font-size: 11px;
+}
+.dev-check {
+  display: flex; align-items: center; gap: 7px;
+  color: #fff; font-size: 11px; cursor: pointer;
+}
+.dev-toggle {
+  position: fixed; bottom: 136px; right: 12px; z-index: 10000;
+  background: var(--navy); color: var(--gold);
+  border: 1px solid var(--gold); border-radius: 50%;
+  width: 36px; height: 36px; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+}
+
+/* ============================================================
+   FUNNEL CONTAINER
+   ============================================================ */
+.funnel-wrap {
+  min-height: 100svh;
+  display: flex; flex-direction: column;
+  max-width: 480px; margin: 0 auto;
+}
+
+/* ============================================================
+   PROGRESS BAR — 3 steps with animated note
+   ============================================================ */
+.progress-bar {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  padding: 14px 20px 10px;
+  display: flex; align-items: center;
+}
+.prog-step {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  flex: 0 0 auto;
+}
+.prog-circle {
+  width: 40px; height: 40px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; transition: all 0.3s;
+  background: var(--surface); border: 2px solid var(--border);
+  color: var(--text-muted); position: relative;
+}
+.prog-step.active .prog-circle {
+  background: var(--gradient); border-color: transparent;
+  color: #fff; box-shadow: var(--shadow);
+}
+.prog-step.active .prog-circle .note-pulse {
+  position: absolute; inset: -6px; border-radius: 50%;
+  border: 2px solid rgba(245,166,35,0.4);
+  animation: pulse-ring 1.8s ease-out infinite;
+}
+@keyframes pulse-ring {
+  0%   { transform: scale(0.85); opacity: 1; }
+  100% { transform: scale(1.3);  opacity: 0; }
+}
+.prog-step.done .prog-circle {
+  background: #DCFCE7; border-color: var(--success); color: var(--success);
+}
+.prog-label {
+  font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+  color: var(--text-muted); transition: all 0.3s; text-align: center;
+  max-width: 58px; line-height: 1.2;
+}
+.prog-step.active .prog-label { color: var(--gold-deep); font-weight: 700; }
+.prog-step.done .prog-label { color: var(--success); }
+.prog-divider {
+  height: 2px; background: var(--border); flex: 1;
+  border-radius: 1px; margin-bottom: 22px; transition: background 0.4s;
+}
+.prog-divider.done { background: var(--success); }
+
+/* ============================================================
+   STEP SCREENS
+   ============================================================ */
+.step-screen {
+  display: none; flex: 1; padding: 24px 20px 110px;
+  flex-direction: column;
+}
+.step-screen.active { display: flex; }
+
+.step-eyebrow {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--gold-deep);
+  margin-bottom: 8px;
+}
+.step-title {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 6.5vw, 30px);
+  font-weight: 700; line-height: 1.25;
+  color: var(--text); margin-bottom: 8px;
+}
+.step-sub {
+  font-size: 14px; color: var(--text-muted);
+  margin-bottom: 28px; line-height: 1.55;
+}
+
+/* ============================================================
+   FORM ELEMENTS
+   ============================================================ */
+.input-group { margin-bottom: 20px; }
+.input-label {
+  font-size: 13px; font-weight: 600;
+  color: var(--text); margin-bottom: 7px; display: block;
+}
+.input-label .opt {
+  font-weight: 400; color: var(--text-muted); font-size: 12px;
+}
+.input-field {
+  width: 100%;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 13px 16px;
+  font-size: 15px; background: var(--bg);
+  color: var(--text); transition: border-color 0.2s, box-shadow 0.2s;
+}
+.input-field:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 3px rgba(245,166,35,0.12);
+}
+.input-field::placeholder { color: #BBBBBB; }
+textarea.input-field { resize: vertical; min-height: 110px; line-height: 1.55; }
+
+/* age-stepper removed — using plain input */
+
+/* Milestone badge under stepper */
+.milestone-badge {
+  display: none; margin-top: 10px;
+  background: var(--gradient-soft); border: 1px solid #F5C76C;
+  border-radius: var(--radius-xs); padding: 8px 14px;
+  font-size: 13px; font-weight: 600; color: var(--gold-deep);
+  text-align: center; animation: fadeUp 0.35s ease;
+}
+.milestone-badge.show { display: block; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ============================================================
+   BACK BUTTON
+   ============================================================ */
+.btn-back {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: none; color: var(--text-muted);
+  font-size: 13px; font-weight: 500; padding: 0;
+  margin-bottom: 18px; opacity: 0.55; transition: opacity 0.2s;
+  align-self: flex-start;
+}
+.btn-back:hover { opacity: 0.85; }
+
+/* ============================================================
+   LOADING SCREEN
+   ============================================================ */
+.loading-wrap {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 32px 20px; gap: 20px; width: 100%;
+}
+.loading-hero {
+  display: flex; align-items: center; gap: 16px; width: 100%; max-width: 380px;
+}
+.note-orb {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: var(--gradient-soft); border: 2px solid #F5C76C;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 30px; flex-shrink: 0;
+  animation: float 2.4s ease-in-out infinite;
+  box-shadow: 0 4px 20px rgba(245,166,35,0.2);
+}
+@keyframes float { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-8px) rotate(4deg); } }
+.loading-titles h2 {
+  font-family: var(--font-display);
+  font-size: clamp(20px, 5.5vw, 26px);
+  font-weight: 700; line-height: 1.25; color: var(--text);
+}
+.loading-titles p { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+.loading-card {
+  width: 100%; max-width: 380px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px;
+  box-shadow: var(--shadow-card);
+}
+.loading-phase {
+  font-size: 12px; color: var(--text-muted); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 7px; min-height: 18px;
+}
+.loading-pct {
+  font-family: var(--font-display);
+  font-size: 46px; font-weight: 700; color: var(--text);
+  text-align: center; line-height: 1; margin-bottom: 14px;
+}
+.gold-track {
+  width: 100%; height: 7px; background: #EDE9E3;
+  border-radius: 4px; overflow: hidden; margin-bottom: 14px;
+}
+.gold-fill {
+  height: 100%; border-radius: 4px;
+  background: var(--gradient); width: 0%;
+  transition: width 0.7s ease;
+}
+.dot-track { display: flex; justify-content: space-between; padding: 0 2px; }
+.ldot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #E8E3DC; transition: background 0.4s;
+}
+.ldot.active { background: var(--gold); }
+
+/* ============================================================
+   PREVIEW SCREEN
+   ============================================================ */
+.preview-card {
+  background: linear-gradient(135deg, #FDF3DF 0%, #FDE8C0 100%);
+  border: 2px solid #F5C76C;
+  border-radius: var(--radius); padding: 24px 20px; margin-bottom: 20px;
+}
+.preview-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--gradient); color: #fff;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; padding: 5px 14px; border-radius: 20px;
+  margin-bottom: 16px;
+}
+.play-orb {
+  width: 72px; height: 72px; border-radius: 50%;
+  background: var(--gradient); color: #fff;
+  font-size: 26px; display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 16px; box-shadow: var(--shadow); cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+.play-orb:hover { transform: scale(1.06); box-shadow: 0 8px 32px rgba(245,166,35,0.45); }
+.play-orb .ring {
+  position: absolute; inset: -6px; border-radius: 50%;
+  border: 2px solid rgba(245,166,35,0.4);
+  animation: pulse-ring 2s ease-out infinite;
+}
+.locked-card {
+  background: var(--surface); border: 2px solid var(--border);
+  border-radius: var(--radius); padding: 24px 20px;
+  text-align: center; opacity: 0.75;
+}
+.lock-icon { font-size: 28px; margin-bottom: 8px; }
+.preview-versions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+
+.lyrics-box {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; margin-bottom: 20px;
+  display: none;
+}
+.lyrics-box.visible { display: block; }
+.lyrics-title {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--gold-deep); margin-bottom: 12px;
+}
+.lyrics-text {
+  font-family: var(--font-display); font-size: 14px; font-style: italic;
+  line-height: 1.8; color: var(--text); white-space: pre-line;
+  max-height: 220px; overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--gold) #e8e3dc;
+}
+.lyrics-text::-webkit-scrollbar { width: 4px; }
+.lyrics-text::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 4px; }
+
+/* ============================================================
+   ORDER / PRICING
+   ============================================================ */
+.pricing-card {
+  background: var(--bg-warm); border: 2px solid var(--border);
+  border-radius: var(--radius); padding: 18px;
+  margin-bottom: 16px;
+}
+.pricing-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 14px; }
+.pricing-name { font-size: 16px; font-weight: 700; color: var(--text); }
+.pricing-delivery { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+.pricing-old { font-size: 12px; color: var(--text-muted); text-decoration: line-through; }
+.pricing-price { font-size: 28px; font-weight: 800; color: var(--gold-deep); line-height: 1; }
+.pricing-list { list-style: none; font-size: 13px; display: flex; flex-direction: column; gap: 7px; }
+.pricing-list li { display: flex; gap: 8px; }
+.ok { color: var(--success); }
+
+/* Bump items */
+.bump-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.bump-item {
+  border: 2px solid var(--border); border-radius: var(--radius);
+  overflow: hidden; cursor: pointer; text-align: center;
+  transition: border-color 0.2s; background: var(--bg);
+}
+.bump-item.checked { border-color: var(--gold); }
+.bump-img-area {
+  height: 80px; display: flex; align-items: center; justify-content: center;
+  font-size: 30px; background: var(--gradient-soft); position: relative;
+}
+.bump-img-area img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.bump-img-fallback {
+  position: absolute; inset: 0; display: flex; align-items: center;
+  justify-content: center;
+}
+.bump-body { padding: 8px 6px 10px; }
+.bump-name { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+.bump-price { font-size: 13px; font-weight: 800; color: var(--gold-deep); }
+.bump-check {
+  width: 20px; height: 20px; border: 2px solid var(--border);
+  border-radius: 5px; margin: 4px auto 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 900; color: transparent;
+  transition: all 0.2s;
+}
+.bump-item.checked .bump-check { background: var(--gold); border-color: var(--gold); color: #fff; }
+
+/* ============================================================
+   STRIPE PAYMENT
+   ============================================================ */
+.payment-section { margin-bottom: 20px; }
+.payment-section h4 {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border);
+}
+.stripe-field {
+  border: 2px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 14px; background: var(--bg); transition: border-color 0.2s;
+}
+.stripe-field.focused { border-color: var(--gold); }
+.stripe-card-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;
+}
+.stripe-field-label {
+  display: block; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); margin-bottom: 5px;
+}
+#stripe-errors {
+  color: var(--error); font-size: 13px; margin-top: 8px; display: none;
+}
+
+.order-summary {
+  background: var(--surface); border-radius: var(--radius-sm);
+  padding: 14px; margin-bottom: 16px;
+}
+.summary-line { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+.summary-total {
+  display: flex; justify-content: space-between; font-size: 17px; font-weight: 800;
+  border-top: 1px solid var(--border); padding-top: 10px; margin-top: 8px;
+}
+.checkout-banner {
+  display: none; width: 100%; height: 112px; object-fit: cover;
+  object-position: center 38%;
+  border-radius: var(--radius-sm); margin-bottom: 10px;
+}
+#step-14 {
+  padding-top: 14px !important;
+  padding-bottom: 88px !important;
+}
+#step-14 .btn-back { margin-bottom: 8px; }
+#step-14 .step-eyebrow { margin-bottom: 2px; }
+#step-14 .step-title { font-size: 24px; margin-bottom: 10px; }
+#step-14 .checkout-order-header {
+  padding: 9px 12px; margin-bottom: 10px;
+}
+#step-14 .payment-section { margin-bottom: 10px; }
+#step-14 .payment-section h4 {
+  margin-bottom: 7px; padding-bottom: 5px;
+}
+#step-14 .order-summary { padding: 10px 12px; margin-bottom: 9px; }
+#step-14 .summary-total { padding-top: 6px; margin-top: 5px; }
+#step-14 #btn-pay {
+  position: fixed !important; z-index: 120; bottom: 12px; left: 50%;
+  transform: translateX(-50%); width: min(calc(100% - 40px), 440px);
+  box-shadow: 0 8px 28px rgba(26,35,64,0.25);
+}
+
+/* ============================================================
+   SUCCESS SCREEN
+   ============================================================ */
+.success-wrap { padding: 40px 20px 90px; text-align: center; }
+.confetti-orb { font-size: 64px; margin-bottom: 14px; display: block; }
+.success-title {
+  font-family: var(--font-display);
+  font-size: clamp(24px, 7vw, 32px); font-weight: 700;
+  margin-bottom: 8px; color: var(--text);
+}
+.success-sub { font-size: 15px; color: var(--text-muted); margin-bottom: 28px; }
+.song-player-card {
+  background: var(--bg-warm); border: 2px solid #F5C76C;
+  border-radius: var(--radius); padding: 20px; text-align: left; margin-bottom: 20px;
+}
+.song-player-title {
+  font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px;
+}
+.dl-btn {
+  display: block; margin-top: 12px; text-align: center;
+  background: var(--gradient); color: #fff;
+  border-radius: var(--radius-sm); padding: 12px;
+  font-weight: 700; font-size: 14px; text-decoration: none;
+  box-shadow: var(--shadow);
+}
+
+/* ============================================================
+   EMAIL MODAL
+   ============================================================ */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(26,35,64,0.65); backdrop-filter: blur(5px);
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.3s;
+  padding: 20px;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal-sheet {
+  background: var(--bg); border-radius: var(--radius);
+  padding: 28px 22px; width: 100%; max-width: 420px;
+  transform: translateY(14px) scale(0.97); transition: transform 0.25s ease;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+}
+.modal-overlay.open .modal-sheet { transform: translateY(0) scale(1); }
+.modal-note { font-size: 36px; text-align: center; margin-bottom: 12px; }
+.modal-title {
+  font-family: var(--font-display); font-size: 22px; font-weight: 700;
+  text-align: center; margin-bottom: 6px; color: var(--text);
+}
+.modal-sub { font-size: 14px; color: var(--text-muted); text-align: center; margin-bottom: 22px; }
+
+/* ============================================================
+   STICKY BOTTOM BUTTON
+   ============================================================ */
+.sticky-btn {
+  position: fixed; bottom: 0; left: 0; right: 0; z-index: 50;
+  background: linear-gradient(transparent, var(--bg) 22%);
+  padding: 16px 20px 26px;
+}
+.btn-main {
+  width: 100%; max-width: 480px; margin: 0 auto; display: block;
+  padding: 17px 24px; border-radius: 50px;
+  font-size: 16px; font-weight: 700; letter-spacing: 0.01em;
+  background: var(--gradient); color: #fff;
+  box-shadow: var(--shadow); position: relative; overflow: hidden;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.btn-main:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(245,166,35,0.45); }
+.btn-main:active { transform: translateY(0); }
+.btn-main:disabled { opacity: 0.4; transform: none; cursor: default; pointer-events: none; }
+.btn-main .shimmer {
+  position: absolute; top: 0; left: -100%; width: 60%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+  animation: shimmer 2.8s infinite;
+}
+@keyframes shimmer { to { left: 150%; } }
+.btn-secondary {
+  display: block; width: 100%; text-align: center;
+  background: none; border: 2px solid var(--border);
+  border-radius: 50px; padding: 14px;
+  font-size: 15px; font-weight: 600; color: var(--text-muted);
+  margin-top: 10px; transition: border-color 0.2s;
+}
+.btn-secondary:hover { border-color: var(--text-muted); }
+.terms-note { font-size: 11px; color: var(--text-muted); text-align: center; margin-top: 8px; }
+
+/* Viewonce overlay */
+#viewonce-overlay {
+  position: fixed; inset: 0; z-index: 9000;
+  background: #0D1120;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 28px;
+}
+.vinyl {
+  width: 160px; height: 160px; border-radius: 50%;
+  background: radial-gradient(circle at center, #F5A623 0 7%, #151515 8% 21%, #272727 22% 25%, #111 26% 36%, #2d2d2d 37% 39%, #111 40% 100%);
+  box-shadow: 0 0 0 8px #181818, 0 24px 70px rgba(0,0,0,0.55);
+  animation: spin 2.1s linear infinite; margin-bottom: 28px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Misc */
+.hidden { display: none !important; }
+.center { text-align: center; }
+.mt8 { margin-top: 8px; }
+.mt16 { margin-top: 16px; }
+.separator { height: 1px; background: var(--border); margin: 16px 0; }
+.fade-in { animation: fadeIn 0.4s ease; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ============================================================
+   LOADING PREV (transition before preview)
+   ============================================================ */
+.compact-loading {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  text-align: center; gap: 16px; padding: 28px 16px;
+  min-height: 420px;
+}
+.spinner-ring {
+  width: 56px; height: 56px; border-radius: 50%;
+  border: 5px solid var(--border); border-top-color: var(--gold);
+  animation: spin 0.9s linear infinite; margin: 10px auto;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== DEV TOOLBAR ===== -->
+<button class="dev-toggle" onclick="toggleDevBar()" title="Dev tools">🛠</button>
+<div id="dev-toolbar" style="display:none">
+  <div class="dev-label">🛠 Dev Shortcuts</div>
+  <label class="dev-check">
+    <input type="checkbox" id="dev-skip-generation" onchange="setSkipGeneration(this.checked)">
+    Skip music generation
+  </label>
+  <select id="dev-country" class="dev-control" onchange="setTestCountry(this.value)">
+    <option value="">Auto location</option>
+    <option value="ZA">South Africa — ZAR</option>
+    <option value="PH">Philippines — PHP</option>
+    <option value="GB">United Kingdom — GBP</option>
+    <option value="US">United States — USD</option>
+    <option value="CA">Canada — CAD</option>
+    <option value="AU">Australia — AUD</option>
+    <option value="DEFAULT">Other — USD</option>
+  </select>
+  <button class="dev-btn" onclick="devGoto(1)">→ Step 1 (Info)</button>
+  <button class="dev-btn" onclick="devGoto(4)">→ Step 4 (Loading)</button>
+  <button class="dev-btn" onclick="devOpenEmailModal()">→ Email Modal</button>
+  <button class="dev-btn" onclick="devGoto(8)">→ Step 8 (Preview)</button>
+  <button class="dev-btn" onclick="devShowPreviewReady()">→ Preview Ready</button>
+  <button class="dev-btn" onclick="devShowPreviewDone()">→ Preview Listened</button>
+  <button class="dev-btn" onclick="devGoto(12)">→ Step 12 (Plans)</button>
+  <button class="dev-btn" onclick="devGoto(14)">→ Step 14 (Checkout)</button>
+  <button class="dev-btn" onclick="devGoto('success')">→ Success</button>
+  <button class="dev-btn" onclick="devSimPayment()">→ Simulate Payment</button>
+</div>
+
+<!-- ===== MAIN FUNNEL ===== -->
+<div class="funnel-wrap">
+
+  <!-- PROGRESS BAR — 3 steps -->
+  <div class="progress-bar" id="progressBar">
+    <div class="prog-step active" id="prog-info">
+      <div class="prog-circle" id="pc-info">
+        🎂<div class="note-pulse"></div>
+      </div>
+      <div class="prog-label">Birthday Star</div>
+    </div>
+    <div class="prog-divider" id="div-1"></div>
+    <div class="prog-step" id="prog-preview">
+      <div class="prog-circle" id="pc-preview">🎧</div>
+      <div class="prog-label">Preview</div>
+    </div>
+    <div class="prog-divider" id="div-2"></div>
+    <div class="prog-step" id="prog-complete">
+      <div class="prog-circle" id="pc-complete">🎁</div>
+      <div class="prog-label">Complete</div>
+    </div>
+  </div>
+
+  <!-- ===== STEP 1: BIRTHDAY INFO ===== -->
+  <div class="step-screen active" id="step-1">
+    <div class="step-eyebrow">🎶 Your personalized birthday song</div>
+    <h1 class="step-title">Who's the birthday star?</h1>
+    <p class="step-sub">It can be you, a friend, a parent, anyone worth celebrating. We'll write a song just for them.</p>
+
+    <div class="input-group">
+      <label class="input-label" for="honoree-name">Name of the birthday person *</label>
+      <input type="text" class="input-field" id="honoree-name" placeholder="e.g. Sarah, yourself, Mom, Uncle Mike…" maxlength="50" oninput="onNameInput(this.value)" autocomplete="off">
+    </div>
+
+    <div class="input-group">
+      <label class="input-label" for="age-input">Age they're turning *</label>
+      <input type="number" class="input-field" id="age-input" placeholder="e.g. 30" min="1" max="120" inputmode="numeric" pattern="[0-9]*" oninput="onAgeInput(this.value)" style="font-size:22px;font-weight:700;text-align:center;letter-spacing:0.04em">
+      <div class="milestone-badge" id="milestone-badge"></div>
+    </div>
+
+    <div class="input-group">
+      <label class="input-label" for="special-message">
+        A special message <span class="opt">(optional)</span>
+      </label>
+      <textarea class="input-field" id="special-message" rows="4"
+        placeholder="Tell us what makes this person special, a shared memory, an inside joke, or something you love about them..."
+        maxlength="400" oninput="onMessageInput(this.value)"></textarea>
+    </div>
+  </div>
+
+  <!-- ===== STEP 4: LOADING ===== -->
+  <div class="step-screen" id="step-4" style="padding:0 0 40px">
+    <div class="loading-wrap">
+      <div class="loading-hero">
+        <div class="note-orb" id="loadingOrb">🎵</div>
+        <div class="loading-titles">
+          <h2>Composing <span id="loading-name">their</span> song…</h2>
+          <p>Our AI songwriter is creating something unique.</p>
+        </div>
+      </div>
+      <div class="loading-card">
+        <div class="loading-phase" id="loading-phase-text">🎂 Getting to know the birthday star…</div>
+        <div class="loading-pct" id="loading-pct">0%</div>
+        <div class="gold-track"><div class="gold-fill" id="gold-fill"></div></div>
+        <div class="dot-track" id="dot-track">
+          <div class="ldot active" id="ldot-0"></div>
+          <div class="ldot" id="ldot-1"></div>
+          <div class="ldot" id="ldot-2"></div>
+          <div class="ldot" id="ldot-3"></div>
+          <div class="ldot" id="ldot-4"></div>
+        </div>
+      </div>
+      <p class="center" style="font-size:13px;color:var(--text-muted);max-width:320px">
+        We write the lyrics, compose the melody, and record the vocals — all in a few minutes.
+      </p>
+    </div>
+  </div>
+
+  <!-- ===== STEP 8: PREVIEW ===== -->
+  <div class="step-screen" id="step-8" style="padding-bottom:110px">
+
+    <!-- State A: idle (before listening) -->
+    <div id="preview-idle">
+      <h2 class="step-title" id="preview-headline">Your song preview is ready 🎉</h2>
+      <p class="step-sub" id="preview-sub">Give it a listen before you get the full version.</p>
+
+      <div class="preview-versions">
+        <div class="preview-card" id="version-1-card" style="text-align:center">
+          <div class="preview-badge">🔊 Version 1</div>
+          <div class="play-orb" id="play-preview-btn" onclick="abrirViewOnce()">
+            ▶<div class="ring"></div>
+          </div>
+          <div style="font-size:13px;font-weight:600;color:var(--text)">🎵 For <span class="preview-name" style="color:var(--gold-deep)"></span></div>
+        </div>
+        <div class="locked-card" style="text-align:center">
+          <div class="lock-icon">🔒</div>
+          <div style="font-size:12px;font-weight:700;margin-bottom:4px;color:var(--text)">Version 2</div>
+          <div style="font-size:12px;color:var(--text-muted)">Different style — available after checkout</div>
+        </div>
+      </div>
+
+      <div class="lyrics-box" id="lyrics-box">
+        <div class="lyrics-title">♫ Full Lyrics Preview</div>
+        <div class="lyrics-text" id="lyrics-text"></div>
+      </div>
+
+      <!-- CTA shown after listening -->
+      <div id="btn-complete-wrap" class="hidden">
+        <div class="sticky-btn" style="position:relative;background:none;padding:0;margin-top:4px">
+          <button class="btn-main" onclick="goToStep(12)">
+            🎁 Get the Full Song
+            <span class="shimmer"></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- State B: loading preview audio -->
+    <div id="preview-loading-state" class="compact-loading hidden">
+      <div class="note-orb">♪</div>
+      <h2 style="font-family:var(--font-display);font-size:24px;font-weight:700">Loading your preview…</h2>
+      <p style="font-size:14px;color:var(--text-muted)">Just a few seconds.</p>
+      <div class="spinner-ring"></div>
+    </div>
+  </div>
+
+  <!-- ===== STEP 12: PRICING ===== -->
+  <div class="step-screen" id="step-12" style="padding-bottom:110px">
+    <div class="step-eyebrow">🎁 Almost there</div>
+    <h2 class="step-title">Get <span id="plan-name-display">their</span> full birthday song</h2>
+    <p class="step-sub">One unique song, personalized just for them.</p>
+
+    <!-- Plan card -->
+    <div class="pricing-card">
+      <div class="pricing-header">
+        <div>
+          <div class="pricing-name">🎵 Your personalized song</div>
+          <div class="pricing-delivery">Personalized song · MP3 download</div>
+        </div>
+        <div style="text-align:right">
+          <div class="pricing-old" data-price-old>$14.99</div>
+          <div class="pricing-price" data-price-base>$4.99</div>
+        </div>
+      </div>
+      <ul class="pricing-list">
+        <li><span class="ok">✓</span> Full song with custom lyrics</li>
+        <li><span class="ok">✓</span> Professional AI vocal + music</li>
+        <li><span class="ok">✓</span> MP3 download, keep forever</li>
+        <li><span class="ok">✓</span> 30-day satisfaction guarantee</li>
+      </ul>
+    </div>
+
+    <!-- Order bumps -->
+    <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:10px;letter-spacing:0.05em;text-transform:uppercase">Add to your order:</div>
+    <div class="bump-grid">
+      <div class="bump-item" id="bump-style" onclick="toggleBump(this,'style')">
+        <div class="bump-img-area">
+          <span class="bump-img-fallback">🎬</span>
+          <img src="video.jpg" alt="Lyric video" onload="this.previousElementSibling.style.display='none'" onerror="this.remove()">
+        </div>
+        <div class="bump-body">
+          <div class="bump-name">Video</div>
+          <div class="bump-price" data-bump-price="style">+$2.99</div>
+          <div class="bump-check">✓</div>
+        </div>
+      </div>
+      <div class="bump-item" id="bump-video" onclick="toggleBump(this,'video')">
+        <div class="bump-img-area">
+          <span class="bump-img-fallback">🎸</span>
+          <img src="onemore.jpg" alt="Additional personalized song" onload="this.previousElementSibling.style.display='none'" onerror="this.remove()">
+        </div>
+        <div class="bump-body">
+          <div class="bump-name">One more music 50% off</div>
+          <div class="bump-price" data-bump-price="video">+$4.99</div>
+          <div class="bump-check">✓</div>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-main" onclick="goToCheckout()" style="position:relative;margin-bottom:0">
+      Continue to Payment →
+      <span class="shimmer"></span>
+    </button>
+  </div>
+
+  <!-- ===== STEP 14: CHECKOUT (Stripe) ===== -->
+  <div class="step-screen" id="step-14" style="padding-bottom:110px">
+    <img
+      class="checkout-banner"
+      src="banner.jpg"
+      alt="Personalized birthday song"
+      onload="this.style.display='block'"
+      onerror="this.remove()">
+    <button class="btn-back" onclick="goToStep(12)">← Back</button>
+    <div class="step-eyebrow">💳 Secure Checkout</div>
+    <h2 class="step-title">Complete your order</h2>
+
+    <!-- Order header -->
+    <div class="checkout-order-header" style="background:var(--gradient-soft);border-radius:var(--radius-sm);border:1px solid #F5C76C">
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">🎵 Birthday Song for <span id="checkout-honoree" style="color:var(--gold-deep)"></span></div>
+      <div style="font-size:12px;color:var(--text-muted)">Personalized · MP3 Download</div>
+    </div>
+
+    <!-- Stripe Card Elements -->
+    <div class="payment-section">
+      <h4>💳 Card Details</h4>
+      <label class="stripe-field-label" for="stripe-card-number">Card number</label>
+      <div id="stripe-card-number" class="stripe-field"></div>
+      <div class="stripe-card-row">
+        <div>
+          <label class="stripe-field-label" for="stripe-card-expiry">Expiry date</label>
+          <div id="stripe-card-expiry" class="stripe-field"></div>
+        </div>
+        <div>
+          <label class="stripe-field-label" for="stripe-card-cvc">CVC</label>
+          <div id="stripe-card-cvc" class="stripe-field"></div>
+        </div>
+      </div>
+      <div id="stripe-errors"></div>
+    </div>
+
+    <!-- Order summary -->
+    <div class="order-summary">
+      <div class="summary-line"><span>Birthday Song</span><span data-price-base>$4.99</span></div>
+      <div id="summary-bumps"></div>
+      <div class="summary-total"><span>Total</span><span id="summary-total">$4.99</span></div>
+    </div>
+
+    <button class="btn-main" id="btn-pay" onclick="handlePayment()" style="position:relative">
+      <span id="pay-btn-text">Pay & Get My Song</span>
+      <span class="shimmer"></span>
+    </button>
+  </div>
+
+  <!-- ===== SUCCESS ===== -->
+  <div class="step-screen" id="step-success">
+    <div class="success-wrap">
+      <span class="confetti-orb">🎉</span>
+      <h2 class="success-title">
+        <span id="success-name"></span>'s song is on its way!
+      </h2>
+      <p class="success-sub">Your personalized song is ready. You can listen and download it below.</p>
+
+      <div class="song-player-card">
+        <div class="song-player-title">🎵 Preview — <span id="success-song-name"></span></div>
+        <audio id="success-audio" controls style="width:100%;border-radius:8px" preload="auto"></audio>
+        <a id="success-dl" href="#" download class="dl-btn">⬇️ Download MP3</a>
+      </div>
+
+      <!-- Extra bump deliverables -->
+      <div id="success-video-cta" class="hidden" style="margin-bottom:16px">
+        <div style="background:var(--surface);border-radius:var(--radius);padding:16px">
+          <div style="font-size:14px;font-weight:700;margin-bottom:6px">🎬 Your Lyric Video</div>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px">We're producing your lyric video — it'll arrive in your inbox alongside the MP3.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- funnel-wrap -->
+
+<!-- STICKY BOTTOM (for steps 1 and 14) -->
+<div class="sticky-btn" id="sticky-btn">
+  <button class="btn-main" id="btn-continue" onclick="handleContinue()" disabled>
+    Continue →
+    <span class="shimmer"></span>
+  </button>
+</div>
+
+<!-- EMAIL MODAL (fires at 20% loading) -->
+<div class="modal-overlay" id="emailModal">
+  <div class="modal-sheet">
+    <div class="modal-note">🎧</div>
+    <h2 class="modal-title">Where should we send the preview?</h2>
+    <p class="modal-sub">Enter your email and we'll send a listening link the moment it's ready — usually under 5 minutes.</p>
+    <div class="input-group">
+      <label class="input-label" for="modal-email">Your email *</label>
+      <input type="email" class="input-field" id="modal-email" placeholder="you@example.com">
+    </div>
+    <button class="btn-main" onclick="submitEmail()" style="position:relative">
+      ✉️ Send me the preview →
+      <span class="shimmer"></span>
+    </button>
+  </div>
+</div>
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const CONFIG = {
+  GENERATE_URL:          '/api/generate-music',
+  STATUS_URL:            '/api/music-status',
+  PAYMENT_URL:           '/api/create-payment-intent',
+  PUBLIC_CONFIG_URL:     '/api/public-config',
+  TRACK_URL:             'https://script.google.com/macros/s/AKfycbzHj5zAYO3BdjrPBcvB3iLHO-YN7_TtH5uAQeFlCjshQZRUb6DuIuGd32gbWuo0I_nNBQ/exec',
+  STRIPE_PK:             '',
+  DEMO_AUDIO_URL:        'https://pub-72b0dbedb0e64e0095ae1060b289f1db.r2.dev/musica-final.mp3',
+  SKIP_GENERATION:       false, // true = skip API calls (dev mode)
+  SKIP_PAYMENT:          false, // true = simulate payment (local development only)
+  FORCE_COUNTRY:         '',
+};
+
+// ============================================================
+// FIXED LYRICS TEMPLATE — assembled locally, without lyric AI.
+// ============================================================
+function buildFinalLyrics(name, age, message) {
+  const intro = message && message.trim()
+    ? `[INTRO]\nHappy birthday, ${name}\n${message.trim()}`
+    : `[INTRO]\nToday is a happy day\nHappy birthday, ${name}\nWe are here for you`;
+
+  const verse = `[VERSE]\n${age} years for you\nMake a wish, blow out the candles\nCake and music, everyone smiles\nHappy birthday, ${name}\nThis is your special day`;
+  const bridge = `[BRIDGE]\nClap your hands and sing with us\nDance with us, this is fun\nLet's celebrate, ${name}`;
+  const chorus1 = `[CHORUS]\nHappy birthday, ${name}\nToday we celebrate you\nHappy birthday, ${name}\n${age} years of joy for you\nHappy birthday, ${name}\nWe wish you a happy day\nHappy birthday, ${name}\nEnjoy your day`;
+  const chorus2 = `[CHORUS]\nHappy birthday, ${name}\nToday we celebrate you\nHappy birthday, ${name}\n${age} years of joy for you\nHappy birthday, ${name}\nWe wish you a happy new cycle\nHappy birthday, ${name}\nEnjoy your day`;
+
+  return [intro, verse, bridge, chorus1, chorus2].join('\n\n');
+}
+
+// ============================================================
+// STATE
+// ============================================================
+const PRICE_TABLE = {
+  ZA: { currency: 'zar', amount: 9700,  symbol: 'R', display: 'R97' },
+  PH: { currency: 'php', amount: 19700, symbol: '₱', display: '₱197' },
+  US: { currency: 'usd', amount: 900,   symbol: '$', display: '$9' },
+  CA: { currency: 'cad', amount: 900,   symbol: '$', display: '$9' },
+  GB: { currency: 'gbp', amount: 900,   symbol: '£', display: '£9' },
+  AU: { currency: 'aud', amount: 900,   symbol: '$', display: '$9' },
+  DEFAULT: { currency: 'usd', amount: 900, symbol: '$', display: '$9' }
+};
+
+const BUMP_AMOUNTS = {
+  style: 299,
+  video: 499,
+};
+
+const state = {
+  sessaoId:     uuid(),
+  currentStep:  1,
+  name:         '',
+  age:          null,
+  message:      '',
+  email:        '',
+  audioUrl:     '',
+  audioTaskId:  '',
+  lyrics:       '',
+  bumps:        {},
+  countryCode:  '',
+  pricing:      { ...PRICE_TABLE.DEFAULT },
+  purchaseDone: false,
+  stripeReady:  false,
+};
+
+// ============================================================
+// UTILITIES
+// ============================================================
+function uuid() {
+  return 'xxxxxxxx'.replace(/x/g, () => Math.floor(Math.random()*16).toString(16));
+}
+function $(id) { return document.getElementById(id); }
+function getPriceForCountry(countryCode) {
+  return PRICE_TABLE[String(countryCode || '').toUpperCase()] || PRICE_TABLE.DEFAULT;
+}
+function formatMinorAmount(amount, pricing = state.pricing) {
+  const value = Number(amount || 0) / 100;
+  const hasCents = amount % 100 !== 0;
+  return `${pricing.symbol}${value.toFixed(hasCents ? 2 : 0)}`;
+}
+function getOrderTotalMinor() {
+  const bumpTotal = Object.values(state.bumps).reduce((sum, amount) => sum + amount, 0);
+  return state.pricing.amount + bumpTotal;
+}
+async function detectCountryAndPrice() {
+  let countryCode = CONFIG.FORCE_COUNTRY;
+  if (!countryCode) {
+    try {
+      const response = await fetch('https://get.geojs.io/v1/ip/geo.json');
+      if (!response.ok) throw new Error(`Geo lookup failed (${response.status})`);
+      const data = await response.json();
+      countryCode = data.country_code || data.country || '';
+    } catch (error) {
+      console.warn('[GEO] Using default USD pricing:', error);
+    }
+  }
+
+  state.countryCode = String(countryCode || 'DEFAULT').toUpperCase();
+  state.pricing = { ...getPriceForCountry(state.countryCode) };
+  document.querySelectorAll('[data-price-base]').forEach(el => {
+    el.textContent = state.pricing.display;
+  });
+  document.querySelectorAll('[data-price-old]').forEach(el => {
+    el.textContent = formatMinorAmount(state.pricing.amount * 2);
+  });
+  document.querySelectorAll('[data-bump-price]').forEach(el => {
+    const id = el.dataset.bumpPrice;
+    el.textContent = `+${formatMinorAmount(BUMP_AMOUNTS[id] || 0)}`;
+  });
+  updateTotal();
+  populateCheckoutSummary();
+}
+function trackDebounced(payload, delay = 1500) {
+  clearTimeout(state._trackTimer);
+  state._trackTimer = setTimeout(() => track(payload), delay);
+}
+
+// ============================================================
+// MILESTONE LABELS
+// ============================================================
+const MILESTONES = {
+  1:  '🎊 First birthday — a whole year!',
+  13: '🎉 Hello, teenager!',
+  16: '🎉 Sweet sixteen!',
+  18: '🎊 Now officially an adult!',
+  21: '🎊 Turning 21 — cheers!',
+  30: '🎉 Thirty and thriving!',
+  40: '🎊 Fabulous at forty!',
+  50: '🎉 The big five-oh!',
+  60: '🎊 Diamond edition!',
+  70: '🎉 Seventy and golden!',
+  80: '🎊 80 — absolutely legendary!',
+  90: '🎉 90 incredible years!',
+  100:'🎊 A century! Extraordinary!',
+};
+
+// ============================================================
+// PROGRESS BAR
+// ============================================================
+const GROUPS = ['info', 'preview', 'complete'];
+const GROUP_EMOJI = { info: '🎂', preview: '🎧', complete: '🎁' };
+const STEP_TO_GROUP = {
+  1: 'info', 4: 'info',
+  8: 'preview', 'previa-loading': 'preview',
+  12: 'complete', 14: 'complete', success: 'complete',
+};
+
+function updateProgressBar(step) {
+  const cur = STEP_TO_GROUP[step] || 'info';
+  const curIdx = GROUPS.indexOf(cur);
+  GROUPS.forEach((g, i) => {
+    const stepEl   = $('prog-' + g);
+    const circleEl = $('pc-' + g);
+    const divEl    = $('div-' + (i + 1));
+    if (!stepEl || !circleEl) return;
+    if (i < curIdx) {
+      stepEl.className = 'prog-step done';
+      circleEl.innerHTML = '✓';
+    } else if (i === curIdx) {
+      stepEl.className = 'prog-step active';
+      circleEl.innerHTML = GROUP_EMOJI[g] + '<div class="note-pulse"></div>';
+    } else {
+      stepEl.className = 'prog-step';
+      circleEl.innerHTML = GROUP_EMOJI[g];
+    }
+    if (divEl) divEl.className = i < curIdx ? 'prog-divider done' : 'prog-divider';
+  });
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+const NO_STICKY = [4, 8, 12, 'previa-loading', 'success'];
+
+function showStep(n) {
+  document.querySelectorAll('.step-screen').forEach(s => s.classList.remove('active'));
+  const el = n === 'success' ? $('step-success') : $('step-' + n);
+  if (el) el.classList.add('active');
+  window.scrollTo(0, 0);
+  state.currentStep = n;
+  updateProgressBar(n);
+}
+
+function goToStep(n) {
+  showStep(n);
+  updateStickyBtn(n);
+  if (n === 14) initStripe();
+  if (n === 12) populatePricingSummary();
+}
+
+function updateStickyBtn(step) {
+  const wrap = $('sticky-btn');
+  const btn  = $('btn-continue');
+  if (NO_STICKY.includes(step)) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  btn.disabled = !isValid(step);
+  if (step === 1) btn.textContent = 'Create the Song →';
+  if (step === 14) btn.style.display = 'none'; // step 14 has its own pay button
+}
+
+function isValid(step) {
+  if (step === 1) return state.name.length >= 2 && state.age !== null;
+  return true;
+}
+
+async function handleContinue() {
+  const s = state.currentStep;
+  if (!isValid(s)) return;
+  if (s === 1) {
+    startLoading();
+    return;
+  }
+}
+
+// ============================================================
+// STEP 1 — FORM INPUTS
+// ============================================================
+function onNameInput(val) {
+  state.name = val.trim();
+  updateStickyBtn(1);
+  trackDebounced({ name: state.name });
+}
+
+function onAgeInput(val) {
+  const parsed = parseInt(val, 10);
+  if (!isNaN(parsed) && parsed >= 1 && parsed <= 120) {
+    state.age = parsed;
+    const badge = $('milestone-badge');
+    if (MILESTONES[parsed]) {
+      badge.textContent = MILESTONES[parsed];
+      badge.classList.add('show');
+    } else {
+      badge.classList.remove('show');
+    }
+  } else {
+    state.age = null;
+    $('milestone-badge').classList.remove('show');
+  }
+  updateStickyBtn(1);
+}
+
+function onMessageInput(val) {
+  state.message = val;
+  trackDebounced({ message: val }, 2500);
+}
+
+// ============================================================
+// LOADING — pauses at 20% for email
+// ============================================================
+const LOADING_PHASES = [
+  '🎂 Getting to know the birthday star…',
+  '✏️ Writing personalized lyrics…',
+  '🎵 Composing the melody…',
+  '🎙️ Recording the vocals…',
+  '✨ Finalizing your song…',
+];
+
+function startLoading() {
+  goToStep(4);
+  $('loading-name').textContent = state.name || 'their';
+  $('sticky-btn').style.display = 'none';
+
+  let pct = 0;
+  let phaseIdx = 0;
+  let emailOpened = false;
+  const tick = 220;
+  const TARGET = 20;
+
+  const interval = setInterval(() => {
+    pct += (TARGET / (8000 / tick)); // reach 20% in ~8s
+    if (pct >= TARGET) { pct = TARGET; clearInterval(interval); }
+    applyLoadingPct(Math.round(pct));
+    const newPhase = Math.min(Math.floor(pct / 20), LOADING_PHASES.length - 1);
+    if (newPhase !== phaseIdx) {
+      phaseIdx = newPhase;
+      $('loading-phase-text').textContent = LOADING_PHASES[phaseIdx];
+    }
+    if (pct >= TARGET && !emailOpened) {
+      emailOpened = true;
+      openEmailModal();
+    }
+  }, tick);
+
+  state._loadingInterval = interval;
+}
+
+function applyLoadingPct(pct) {
+  $('loading-pct').textContent = pct + '%';
+  $('gold-fill').style.width = pct + '%';
+  const dotIdx = Math.min(Math.floor(pct / 20), 4);
+  for (let i = 0; i <= 4; i++) {
+    const d = $('ldot-' + i);
+    if (d) d.className = 'ldot' + (i <= dotIdx ? ' active' : '');
+  }
+}
+
+function resumeLoading() {
+  let pct = 20;
+  const tick = 280;
+  const totalTime = 90000;
+  const totalTicks = totalTime / tick;
+  const increment = 75 / totalTicks;
+
+  const interval = setInterval(() => {
+    pct += increment;
+    if (pct >= 95) { pct = 95; clearInterval(interval); }
+    applyLoadingPct(Math.floor(pct));
+    const phaseIdx = Math.min(Math.floor(pct / 20), LOADING_PHASES.length - 1);
+    $('loading-phase-text').textContent = LOADING_PHASES[phaseIdx];
+  }, tick);
+  state._resumeInterval = interval;
+}
+
+// ============================================================
+// EMAIL MODAL
+// ============================================================
+let _lockedScrollY = 0;
+function lockScroll() {
+  _lockedScrollY = window.scrollY || 0;
+  document.body.style.top = `-${_lockedScrollY}px`;
+  document.body.classList.add('modal-open');
+}
+function unlockScroll() {
+  document.body.classList.remove('modal-open');
+  document.body.style.top = '';
+  window.scrollTo(0, _lockedScrollY);
+}
+function openEmailModal() {
+  $('emailModal').classList.add('open');
+  lockScroll();
+}
+function closeEmailModal() {
+  $('emailModal').classList.remove('open');
+  unlockScroll();
+}
+$('emailModal').addEventListener('click', e => { if (e.target === $('emailModal')) closeEmailModal(); });
+
+function submitEmail() {
+  const em = $('modal-email').value.trim();
+  if (!em || !em.includes('@')) { alert('Please enter a valid email address.'); return; }
+  state.email = em;
+  closeEmailModal();
+  track({ email: em });
+  resumeLoading();
+  fireGeneration();
+}
+
+// ============================================================
+// GENERATION
+// ============================================================
+async function fireGeneration() {
+  state.lyrics = buildFinalLyrics(state.name, state.age, state.message);
+
+  if (CONFIG.SKIP_GENERATION) {
+    // Dev shortcut: use the fallback audio without contacting Kie.ai.
+    await sleep(700);
+    state.audioUrl = CONFIG.DEMO_AUDIO_URL;
+    finishLoading();
+    return;
+  }
+
+  try {
+    const res = await fetch(CONFIG.GENERATE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessao:   state.sessaoId,
+        name:     state.name,
+        age:      state.age,
+        message:  state.message,
+        email:    state.email,
+        lyrics:   state.lyrics,
+      })
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || `Generation failed (${res.status})`);
+    if (data.taskId) {
+      state.audioTaskId = data.taskId;
+      track({ taskId: data.taskId });
+      pollResult(data.taskId);
+    } else if (data.audioUrl) {
+      state.audioUrl = data.audioUrl;
+      finishLoading();
+    } else {
+      throw new Error('Kie response did not include a taskId');
+    }
+  } catch(err) {
+    console.warn('[GEN] Failed:', err);
+    state.audioUrl = CONFIG.DEMO_AUDIO_URL;
+    state.lyrics   = demoLyrics();
+    finishLoading();
+  }
+}
+
+async function pollResult(taskId) {
+  const MAX = 60;
+  let tries = 0;
+  const iv = setInterval(async () => {
+    tries++;
+    try {
+      const res  = await fetch(`${CONFIG.STATUS_URL}?taskId=${encodeURIComponent(taskId)}`);
+      const data = await res.json();
+      if (data.audioUrl) {
+        clearInterval(iv);
+        state.audioUrl = data.audioUrl;
+        state.lyrics   = data.lyrics || state.lyrics;
+        finishLoading();
+      }
+    } catch {}
+    if (tries >= MAX) {
+      clearInterval(iv);
+      state.audioUrl = CONFIG.DEMO_AUDIO_URL;
+      finishLoading();
+    }
+  }, 5000);
+}
+
+function finishLoading() {
+  if (state._resumeInterval) clearInterval(state._resumeInterval);
+  applyLoadingPct(100);
+  $('loading-phase-text').textContent = '✨ Your song is ready!';
+  setTimeout(() => {
+    goToStep(8);
+    renderPreviewIdle();
+  }, 800);
+}
+
+function demoLyrics() {
+  return buildFinalLyrics(state.name || 'you', state.age, state.message);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ============================================================
+// STEP 8 — PREVIEW
+// ============================================================
+function renderPreviewIdle() {
+  document.querySelectorAll('.preview-name').forEach(el => el.textContent = state.name);
+  $('preview-idle').classList.remove('hidden');
+  $('preview-loading-state').classList.add('hidden');
+  $('lyrics-box').classList.remove('visible');
+  $('btn-complete-wrap').classList.add('hidden');
+  $('sticky-btn').style.display = 'none';
+}
+
+function renderPreviewReady() {
+  // After user listens — show lyrics + CTA
+  document.querySelectorAll('.preview-name').forEach(el => el.textContent = state.name);
+  $('preview-headline').textContent = `You listened to ${state.name}'s song 🎧`;
+  $('preview-sub').textContent = 'Ready to get the full version?';
+
+  $('version-1-card').innerHTML = `
+    <div class="preview-badge" style="background:var(--success)">✓ Preview listened</div>
+    <div style="font-size:32px;margin:10px 0">🎵</div>
+    <div style="font-size:14px;font-weight:700;color:var(--text)">For <span style="color:var(--gold-deep)">${state.name}</span></div>
+  `;
+
+  if (state.lyrics) {
+    $('lyrics-text').textContent = state.lyrics;
+    $('lyrics-box').classList.add('visible');
+  }
+  $('btn-complete-wrap').classList.remove('hidden');
+  $('sticky-btn').style.display = 'none';
+}
+
+let viewOnceOpened = false;
+function abrirViewOnce() {
+  if (viewOnceOpened) return;
+  viewOnceOpened = true;
+
+  document.querySelectorAll('audio').forEach(a => { try { a.pause(); a.currentTime = 0; } catch {} });
+
+  const overlay = document.createElement('div');
+  overlay.id = 'viewonce-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#0D1120;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px';
+  overlay.innerHTML = `
+    <div class="vinyl"></div>
+    <div style="font-size:24px;font-weight:900;color:#fff;margin-bottom:6px;text-align:center;font-family:var(--font-display)">🎵 For ${state.name}</div>
+    <div style="font-size:14px;color:#aaa;margin-bottom:24px">Birthday Song Preview — listen carefully</div>
+    <div style="width:min(92vw,360px);background:#1a1a1a;border-radius:16px;padding:18px">
+      <input type="range" id="vo-progress" min="0" max="100" value="0" style="width:100%;accent-color:#F5A623;pointer-events:none">
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#666;margin-top:6px">
+        <span id="vo-time">0:00</span><span id="vo-dur">—</span>
+      </div>
+    </div>
+    <audio id="vo-audio" style="display:none"></audio>
+  `;
+  document.body.appendChild(overlay);
+  document.body.classList.add('modal-open');
+
+  const audio = $('vo-audio');
+  const prog  = $('vo-progress');
+  audio.src = state.audioUrl || CONFIG.DEMO_AUDIO_URL;
+  audio.play().catch(() => {});
+
+  function fmt(s) { return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
+  audio.ontimeupdate = () => {
+    prog.value = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
+    $('vo-time').textContent = fmt(audio.currentTime);
+  };
+  audio.onloadedmetadata = () => { $('vo-dur').textContent = fmt(audio.duration); };
+  audio.onended = () => {
+    overlay.remove();
+    document.body.classList.remove('modal-open');
+    track({ preview_listened: 'yes' });
+    renderPreviewReady();
+  };
+
+  // Safety: auto-close after 5 min
+  setTimeout(() => {
+    if ($('viewonce-overlay')) {
+      overlay.remove();
+      document.body.classList.remove('modal-open');
+      renderPreviewReady();
+    }
+  }, 300000);
+
+  track({ preview_opened: 'yes' });
+}
+
+// ============================================================
+// STEP 12 — PRICING
+// ============================================================
+function populatePricingSummary() {
+  $('plan-name-display').textContent = state.name + "'s";
+}
+
+function toggleBump(el, id) {
+  const checked = !el.classList.contains('checked');
+  el.classList.toggle('checked', checked);
+  if (checked) { state.bumps[id] = BUMP_AMOUNTS[id] || 0; } else { delete state.bumps[id]; }
+  updateTotal();
+}
+
+function updateTotal() {
+  if ($('summary-total')) $('summary-total').textContent = formatMinorAmount(getOrderTotalMinor());
+}
+
+function goToCheckout() {
+  goToStep(14);
+  $('checkout-honoree').textContent = state.name;
+  populateCheckoutSummary();
+  track({ step: 'checkout' });
+}
+
+function populateCheckoutSummary() {
+  const bumpLines = $('summary-bumps');
+  bumpLines.innerHTML = '';
+  const names = { style: 'Lyric Video', video: 'Additional Song' };
+  Object.entries(state.bumps).forEach(([id, val]) => {
+    const d = document.createElement('div');
+    d.className = 'summary-line';
+    d.innerHTML = `<span>${names[id] || id}</span><span>+${formatMinorAmount(val)}</span>`;
+    bumpLines.appendChild(d);
+  });
+  $('summary-total').textContent = formatMinorAmount(getOrderTotalMinor());
+}
+
+function getPaymentErrorMessage(error) {
+  const declineCode = error && (error.decline_code || error.code);
+  const messages = {
+    do_not_honor: 'Your bank declined this payment. Please try another card or contact your bank.',
+    generic_decline: 'Your card was declined. Please try another card or contact your bank.',
+    insufficient_funds: 'This card has insufficient funds. Please try another card.',
+    incorrect_cvc: 'The CVC is incorrect. Please check it and try again.',
+    expired_card: 'This card has expired. Please use another card.',
+    card_not_supported: 'This card does not support this purchase. Please try another card.',
+    currency_not_supported: 'This card does not support the selected currency. Please try another card.',
+  };
+  return messages[declineCode] || (error && error.message) || 'Payment could not be processed. Please try another card.';
+}
+
+// ============================================================
+// STRIPE
+// ============================================================
+let stripe = null;
+let cardNumberElement = null;
+let cardExpiryElement = null;
+let cardCvcElement = null;
+const cardFieldComplete = { number: false, expiry: false, cvc: false };
+const runtimeConfigReady = fetch(CONFIG.PUBLIC_CONFIG_URL, { cache: 'no-store' })
+  .then(async response => {
+    const data = await response.json();
+    if (!response.ok || !data.stripePublishableKey) {
+      throw new Error(data.error || 'Stripe publishable key is unavailable.');
+    }
+    CONFIG.STRIPE_PK = data.stripePublishableKey;
+  })
+  .catch(error => {
+    console.error('[CONFIG]', error);
+    throw error;
+  });
+
+async function initStripe() {
+  if (state.stripeReady) return;
+  try {
+    await runtimeConfigReady;
+    stripe = Stripe(CONFIG.STRIPE_PK);
+    const elements = stripe.elements();
+    const elementOptions = {
+      style: { base: {
+        fontSize: '15px',
+        fontFamily: '"Inter", system-ui, sans-serif',
+        color: '#1A2340',
+        '::placeholder': { color: '#BBBBBB' },
+      }}
+    };
+
+    cardNumberElement = elements.create('cardNumber', {
+      ...elementOptions,
+      showIcon: true,
+      placeholder: 'Card number',
+    });
+    cardExpiryElement = elements.create('cardExpiry', elementOptions);
+    cardCvcElement = elements.create('cardCvc', elementOptions);
+
+    const fields = [
+      { element: cardNumberElement, container: 'stripe-card-number', key: 'number' },
+      { element: cardExpiryElement, container: 'stripe-card-expiry', key: 'expiry' },
+      { element: cardCvcElement, container: 'stripe-card-cvc', key: 'cvc' },
+    ];
+
+    fields.forEach(({ element, container, key }) => {
+      element.mount('#' + container);
+      element.on('focus', () => $(container).classList.add('focused'));
+      element.on('blur', () => $(container).classList.remove('focused'));
+      element.on('change', evt => {
+        cardFieldComplete[key] = evt.complete;
+        const errEl = $('stripe-errors');
+        if (evt.error) {
+          errEl.textContent = evt.error.message;
+          errEl.style.display = 'block';
+        } else {
+          errEl.style.display = 'none';
+        }
+      });
+    });
+
+    state.stripeReady = true;
+  } catch(e) {
+    console.warn('[STRIPE] Init failed — using placeholder:', e.message);
+    $('stripe-errors').textContent = 'Secure payment could not be initialized. Please reload and try again.';
+    $('stripe-errors').style.display = 'block';
+  }
+}
+
+async function handlePayment() {
+  const email = state.email;
+  if (!email || !email.includes('@')) { alert('Something went wrong — please go back and enter your email again.'); return; }
+
+  const btn = $('btn-pay');
+  $('pay-btn-text').textContent = 'Processing…';
+  btn.disabled = true;
+
+  if (CONFIG.SKIP_PAYMENT) {
+    // Explicit local-development shortcut.
+    await sleep(1200);
+    paymentSuccess();
+    return;
+  }
+  if (!stripe || !cardNumberElement || !cardExpiryElement || !cardCvcElement) {
+    $('stripe-errors').textContent = 'Secure payment could not be initialized. Please reload and try again.';
+    $('stripe-errors').style.display = 'block';
+    $('pay-btn-text').textContent = 'Try Again';
+    btn.disabled = false;
+    return;
+  }
+  if (!cardFieldComplete.number || !cardFieldComplete.expiry || !cardFieldComplete.cvc) {
+    $('stripe-errors').textContent = 'Please complete the card number, expiry date and CVC.';
+    $('stripe-errors').style.display = 'block';
+    $('pay-btn-text').textContent = 'Pay & Get My Song';
+    btn.disabled = false;
+    return;
+  }
+
+  try {
+    // 1. Create PaymentIntent on your server
+    const totalCents = getOrderTotalMinor();
+
+    const intentRes = await fetch(CONFIG.PAYMENT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount:  totalCents,
+        currency: state.pricing.currency,
+        email:   email,
+        name:    state.name,
+        sessao:  state.sessaoId,
+        bumps:   Object.keys(state.bumps),
+      })
+    });
+    const intentText = await intentRes.text();
+    let intentData = {};
+    try {
+      intentData = JSON.parse(intentText);
+    } catch {
+      const contentType = intentRes.headers.get('content-type') || 'unknown content type';
+      throw new Error(`Payment API error ${intentRes.status} (${contentType}). Verify the Cloudflare Pages Functions deployment.`);
+    }
+    if (!intentRes.ok || intentData.error) {
+      throw new Error(intentData.error || `Payment server error (${intentRes.status}).`);
+    }
+    const clientSecret = intentData.clientSecret;
+    if (!clientSecret) throw new Error('The payment server did not return a client secret.');
+
+    // 2. Confirm payment with Stripe.js
+    const { paymentIntent, error } = await stripe.confirmCardPayment(clientSecret, {
+      payment_method: {
+        card: cardNumberElement,
+        billing_details: { email },
+      }
+    });
+
+    if (error) {
+      $('stripe-errors').textContent = getPaymentErrorMessage(error);
+      $('stripe-errors').style.display = 'block';
+      $('pay-btn-text').textContent = 'Pay & Get My Song';
+      btn.disabled = false;
+      return;
+    }
+
+    if (paymentIntent.status === 'succeeded') {
+      paymentSuccess();
+    }
+  } catch(err) {
+    console.error('[PAYMENT]', err);
+    $('stripe-errors').textContent = err.message || 'Payment could not be processed. Please try again.';
+    $('stripe-errors').style.display = 'block';
+    $('pay-btn-text').textContent = 'Try Again';
+    btn.disabled = false;
+  }
+}
+
+function paymentSuccess() {
+  if (state.purchaseDone) return;
+  state.purchaseDone = true;
+  track({
+    purchase: 'yes',
+    value: getOrderTotalMinor() / 100,
+    currency: state.pricing.currency.toUpperCase()
+  });
+  goToStep('success');
+  $('sticky-btn').style.display = 'none';
+
+  $('success-name').textContent  = state.name;
+  $('success-song-name').textContent = state.name + "'s Birthday Song";
+
+  const audioUrl = state.audioUrl || CONFIG.DEMO_AUDIO_URL;
+  $('success-audio').src = audioUrl;
+  $('success-dl').href   = audioUrl;
+  $('success-dl').download = state.name + ' Birthday Song.mp3';
+
+  if (state.bumps['video']) $('success-video-cta').classList.remove('hidden');
+}
+
+// ============================================================
+// TRACKING
+// ============================================================
+async function track(payload) {
+  if (!CONFIG.TRACK_URL) return;
+  const utms = new URLSearchParams(location.search);
+  try {
+    await fetch(CONFIG.TRACK_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({
+        sessao:       state.sessaoId,
+        utm_campaign: utms.get('utm_campaign') || '',
+        utm_medium:   utms.get('utm_medium')   || '',
+        utm_content:  utms.get('utm_content')  || '',
+        timestamp:    Math.round(Date.now() / 1000),
+        ...payload
+      })
+    });
+  } catch {}
+}
+
+// ============================================================
+// DEV TOOLS
+// ============================================================
+function toggleDevBar() {
+  const bar = $('dev-toolbar');
+  bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+}
+
+function setSkipGeneration(enabled) {
+  CONFIG.SKIP_GENERATION = Boolean(enabled);
+  localStorage.setItem('birthday_skip_music', enabled ? '1' : '0');
+}
+
+function setTestCountry(countryCode) {
+  CONFIG.FORCE_COUNTRY = countryCode === 'DEFAULT' ? 'DEFAULT' : countryCode;
+  if (countryCode) localStorage.setItem('birthday_test_country', countryCode);
+  else localStorage.removeItem('birthday_test_country');
+  detectCountryAndPrice();
+}
+
+function devFillState() {
+  state.name    = 'Sarah';
+  state.age     = 30;
+  state.message = 'She loves yoga, coffee and her golden retriever Max.';
+  state.email   = 'test@example.com';
+  state.audioUrl= CONFIG.DEMO_AUDIO_URL;
+  state.lyrics  = demoLyrics();
+  const ageEl = $('age-input');
+  if (ageEl) ageEl.value = 30;
+  const nameEl = $('honoree-name');
+  if (nameEl) nameEl.value = 'Sarah';
+}
+
+function devGoto(step) {
+  devFillState();
+  goToStep(step);
+  $('dev-toolbar').style.display = 'none';
+}
+
+function devOpenEmailModal() {
+  devFillState();
+  startLoading();
+  setTimeout(openEmailModal, 400);
+  $('dev-toolbar').style.display = 'none';
+}
+
+function devShowPreviewReady() {
+  devFillState();
+  goToStep(8);
+  renderPreviewIdle();
+  $('dev-toolbar').style.display = 'none';
+}
+
+function devShowPreviewDone() {
+  devFillState();
+  goToStep(8);
+  renderPreviewReady();
+  $('dev-toolbar').style.display = 'none';
+}
+
+function devSimPayment() {
+  devFillState();
+  paymentSuccess();
+  $('dev-toolbar').style.display = 'none';
+}
+
+// ============================================================
+// INIT
+// ============================================================
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(location.search);
+  const queryCountry = (params.get('country') || '').toUpperCase();
+  const savedCountry = localStorage.getItem('birthday_test_country') || '';
+  const supportedCountries = ['ZA', 'PH', 'GB', 'US', 'CA', 'AU', 'DEFAULT'];
+  if (queryCountry) {
+    CONFIG.FORCE_COUNTRY = supportedCountries.includes(queryCountry) ? queryCountry : 'DEFAULT';
+  } else if (supportedCountries.includes(savedCountry)) {
+    CONFIG.FORCE_COUNTRY = savedCountry;
+  }
+
+  CONFIG.SKIP_GENERATION =
+    params.get('skipMusic') === '1' ||
+    localStorage.getItem('birthday_skip_music') === '1';
+
+  const countryControl = $('dev-country');
+  const skipControl = $('dev-skip-generation');
+  if (countryControl) countryControl.value = CONFIG.FORCE_COUNTRY;
+  if (skipControl) skipControl.checked = CONFIG.SKIP_GENERATION;
+
+  updateStickyBtn(1);
+  updateProgressBar(1);
+  detectCountryAndPrice();
+  track({ page: 'birthday_funnel_en' });
+});
+</script>
+</body>
+</html>

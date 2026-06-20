@@ -904,10 +904,10 @@ textarea.input-field { resize: vertical; min-height: 110px; line-height: 1.55; }
 // CONFIG
 // ============================================================
 const CONFIG = {
-  GENERATE_URL:          '/api/generate-music',
-  STATUS_URL:            '/api/music-status',
-  PAYMENT_URL:           '/api/create-payment-intent',
-  PUBLIC_CONFIG_URL:     '/api/public-config',
+  GENERATE_URL:          './resultado.php',
+  STATUS_URL:            './resultado.php',
+  PAYMENT_URL:           './callback.php?action=create-payment-intent',
+  PUBLIC_CONFIG_URL:     './callback.php?action=public-config',
   TRACK_URL:             'https://script.google.com/macros/s/AKfycbzHj5zAYO3BdjrPBcvB3iLHO-YN7_TtH5uAQeFlCjshQZRUb6DuIuGd32gbWuo0I_nNBQ/exec',
   STRIPE_PK:             '',
   DEMO_AUDIO_URL:        'https://pub-72b0dbedb0e64e0095ae1060b289f1db.r2.dev/musica-final.mp3',
@@ -1489,10 +1489,6 @@ const runtimeConfigReady = fetch(CONFIG.PUBLIC_CONFIG_URL, { cache: 'no-store' }
       throw new Error(data.error || 'Stripe publishable key is unavailable.');
     }
     CONFIG.STRIPE_PK = data.stripePublishableKey;
-  })
-  .catch(error => {
-    console.error('[CONFIG]', error);
-    throw error;
   });
 
 async function initStripe() {
@@ -1599,7 +1595,7 @@ async function handlePayment() {
       intentData = JSON.parse(intentText);
     } catch {
       const contentType = intentRes.headers.get('content-type') || 'unknown content type';
-      throw new Error(`Payment API error ${intentRes.status} (${contentType}). Verify the Cloudflare Pages Functions deployment.`);
+      throw new Error(`Payment server error ${intentRes.status} (${contentType}). Verify callback.php and PHP on the server.`);
     }
     if (!intentRes.ok || intentData.error) {
       throw new Error(intentData.error || `Payment server error (${intentRes.status}).`);

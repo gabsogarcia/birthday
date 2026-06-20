@@ -1,0 +1,12 @@
+<Files "config.php">
+  Require all denied
+  Order allow,deny
+  Deny from all
+</Files>
+
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^data/ - [F,L]
+</IfModule>

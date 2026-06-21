@@ -883,6 +883,7 @@ const state = {
   previewStartedAt: 0,
   previewSeconds: 0,
   pageStartedAt: Date.now(),
+  orderSubmitted: false,
 };
 
 // ============================================================
@@ -1351,32 +1352,38 @@ function abrirViewOnce() {
 
   const audio = $('vo-audio');
   const prog  = $('vo-progress');
+  let previewFinished = false;
   audio.src = state.audioUrl || CONFIG.FALLBACK_AUDIO_URL;
   audio.play().catch(() => {});
 
   function fmt(s) { return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
-  audio.ontimeupdate = () => {
-    prog.value = audio.duration ? (audio.currentTime / audio.duration) * 100 : 0;
-    $('vo-time').textContent = fmt(audio.currentTime);
-  };
-  audio.onloadedmetadata = () => { $('vo-dur').textContent = fmt(audio.duration); };
-  audio.onended = () => {
-    state.previewSeconds = Math.round((Date.now() - state.previewStartedAt) / 1000);
+  function finishPreview() {
+    if (previewFinished) return;
+    previewFinished = true;
+    state.previewSeconds = Math.min(
+      70,
+      Math.max(1, Math.round((Date.now() - state.previewStartedAt) / 1000))
+    );
+    try { audio.pause(); } catch {}
     overlay.remove();
     document.body.classList.remove('modal-open');
     track({ timer: state.previewSeconds });
     renderPreviewReady();
+  }
+  audio.ontimeupdate = () => {
+    const previewDuration = Math.min(70, audio.duration || 70);
+    prog.value = previewDuration ? (audio.currentTime / previewDuration) * 100 : 0;
+    $('vo-time').textContent = fmt(audio.currentTime);
+    if (audio.currentTime >= 70) finishPreview();
   };
+  audio.onloadedmetadata = () => {
+    $('vo-dur').textContent = fmt(Math.min(70, audio.duration || 70));
+  };
+  audio.onended = finishPreview;
 
   // Safety: auto-close after 5 min
   setTimeout(() => {
-    if ($('viewonce-overlay')) {
-      state.previewSeconds = Math.round((Date.now() - state.previewStartedAt) / 1000);
-      overlay.remove();
-      document.body.classList.remove('modal-open');
-      track({ timer: state.previewSeconds });
-      renderPreviewReady();
-    }
+    if ($('viewonce-overlay')) finishPreview();
   }, 300000);
 
 }
@@ -1401,6 +1408,7 @@ function updateTotal() {
 }
 
 function goToCheckout() {
+  state.orderSubmitted = true;
   goToStep(14);
   $('checkout-honoree').textContent = state.name;
   populateCheckoutSummary();
@@ -1674,9 +1682,11 @@ function buildTrackingPayload(payload = {}) {
     preview: trackingState.preview || '',
     link: state.audioUrl || '',
     checkout: trackingState.checkout || '',
-    orderbump: Object.keys(state.bumps).map(id => bumpNames[id] || id).join(', '),
-    valor: (getOrderTotalMinor() / 100).toFixed(2),
-    moeda: state.pricing.currency.toUpperCase(),
+    orderbump: state.orderSubmitted
+      ? (Object.keys(state.bumps).map(id => bumpNames[id] || id).join(', ') || 'nenhum')
+      : '',
+    valor: state.orderSubmitted ? (getOrderTotalMinor() / 100).toFixed(2) : '',
+    moeda: state.orderSubmitted ? state.pricing.currency.toUpperCase() : '',
     card: trackingState.card || '',
     transaction: trackingState.transaction || '',
     timer: state.previewSeconds || livePreviewSeconds || '',

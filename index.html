@@ -1249,6 +1249,9 @@ async function pollResult(taskId) {
     try {
       const res  = await fetch(`${CONFIG.STATUS_URL}?taskId=${encodeURIComponent(taskId)}`);
       const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Status failed (${res.status})`);
+      }
       if (data.audioUrl) {
         clearInterval(iv);
         state.audioUrl = data.audioUrl;
@@ -1256,7 +1259,14 @@ async function pollResult(taskId) {
         track({ link: state.audioUrl });
         finishLoading();
       }
-    } catch {}
+    } catch (error) {
+      console.warn('[GEN POLL]', error);
+      if (/failed|error|sensitive|credits/i.test(error.message || '')) {
+        clearInterval(iv);
+        state.audioUrl = CONFIG.FALLBACK_AUDIO_URL;
+        finishLoading();
+      }
+    }
     if (tries >= MAX) {
       clearInterval(iv);
       state.audioUrl = CONFIG.FALLBACK_AUDIO_URL;

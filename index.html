@@ -285,25 +285,6 @@ textarea.input-field { resize: vertical; min-height: 110px; line-height: 1.55; }
 .lock-icon { font-size: 28px; margin-bottom: 8px; }
 .preview-versions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
 
-.lyrics-box {
-  background: var(--bg); border: 1px solid var(--border);
-  border-radius: var(--radius); padding: 18px; margin-bottom: 20px;
-  display: none;
-}
-.lyrics-box.visible { display: block; }
-.lyrics-title {
-  font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
-  text-transform: uppercase; color: var(--gold-deep); margin-bottom: 12px;
-}
-.lyrics-text {
-  font-family: var(--font-display); font-size: 14px; font-style: italic;
-  line-height: 1.8; color: var(--text); white-space: pre-line;
-  max-height: 220px; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: var(--gold) #e8e3dc;
-}
-.lyrics-text::-webkit-scrollbar { width: 4px; }
-.lyrics-text::-webkit-scrollbar-thumb { background: var(--gold); border-radius: 4px; }
-
 /* ============================================================
    ORDER / PRICING
    ============================================================ */
@@ -487,6 +468,16 @@ textarea.input-field { resize: vertical; min-height: 110px; line-height: 1.55; }
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
   animation: shimmer 2.8s infinite;
 }
+@keyframes cta-pulse {
+  0%, 100% { transform: scale(1); box-shadow: var(--shadow); }
+  50% { transform: scale(1.035); box-shadow: 0 8px 34px rgba(245,166,35,0.55); }
+}
+.btn-pulse {
+  animation: cta-pulse 1.6s ease-in-out infinite;
+}
+.btn-pulse:hover {
+  animation-play-state: paused;
+}
 @keyframes shimmer { to { left: 150%; } }
 .btn-secondary {
   display: block; width: 100%; text-align: center;
@@ -641,15 +632,10 @@ textarea.input-field { resize: vertical; min-height: 110px; line-height: 1.55; }
         </div>
       </div>
 
-      <div class="lyrics-box" id="lyrics-box">
-        <div class="lyrics-title">♫ Full Lyrics Preview</div>
-        <div class="lyrics-text" id="lyrics-text"></div>
-      </div>
-
       <!-- CTA shown after listening -->
       <div id="btn-complete-wrap" class="hidden">
-        <div class="sticky-btn" style="position:relative;background:none;padding:0;margin-top:4px">
-          <button class="btn-main" onclick="goToStep(12)">
+        <div class="sticky-btn" style="position:relative;background:none;padding:0;margin-top:14px">
+          <button class="btn-main btn-pulse" onclick="goToStep(12)">
             🎁 Get the Full Song
             <span class="shimmer"></span>
           </button>
@@ -1316,7 +1302,6 @@ function renderPreviewIdle() {
   document.querySelectorAll('.preview-name').forEach(el => el.textContent = state.name);
   $('preview-idle').classList.remove('hidden');
   $('preview-loading-state').classList.add('hidden');
-  $('lyrics-box').classList.remove('visible');
   $('btn-complete-wrap').classList.add('hidden');
   $('sticky-btn').style.display = 'none';
 }
@@ -1333,10 +1318,6 @@ function renderPreviewReady() {
     <div style="font-size:14px;font-weight:700;color:var(--text)">For <span style="color:var(--gold-deep)">${state.name}</span></div>
   `;
 
-  if (state.lyrics) {
-    $('lyrics-text').textContent = state.lyrics;
-    $('lyrics-box').classList.add('visible');
-  }
   $('btn-complete-wrap').classList.remove('hidden');
   $('sticky-btn').style.display = 'none';
 }

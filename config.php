@@ -9,4 +9,4 @@ define('KIE_API_KEY', 'COLE_AQUI_KIE_API_KEY');
 define('KIE_API_URL', 'https://api.kie.ai/api/v1/generate');
 define('KIE_STATUS_URL', 'https://api.kie.ai/api/v1/generate/record-info');
 define('KIE_MODEL', 'V4_5');
-define('KIE_MUSIC_STYLE', 'Upbeat feel-good pop, acoustic guitar, ukulele, hand claps, bright piano, warm cheerful vocals, sing-along chorus, major key, 120 BPM, festive party energy, radio-friendly, family-friendly');
+define('KIE_MUSIC_STYLE', 'Anthemic contemporary worship pop, soaring piano, swelling strings, uplifting pads, big drums building from soft verse to big chorus, gospel-style group vocals, emotional and triumphant, major key, 100 BPM, polished modern production');

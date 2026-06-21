@@ -57,46 +57,6 @@ input, textarea, select { font-family: var(--font-body); outline: none; }
 a { text-decoration: none; color: inherit; }
 
 /* ============================================================
-   DEV TOOLBAR — visible only in dev mode
-   ============================================================ */
-#dev-toolbar {
-  position: fixed; bottom: 80px; right: 12px; z-index: 9999;
-  display: flex; flex-direction: column; gap: 6px;
-  background: rgba(26,35,64,0.92); border-radius: var(--radius-sm);
-  padding: 10px 12px; min-width: 210px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-  backdrop-filter: blur(8px);
-}
-#dev-toolbar .dev-label {
-  font-size: 9px; font-weight: 700; letter-spacing: 0.1em;
-  color: var(--gold); text-transform: uppercase; margin-bottom: 4px;
-}
-.dev-btn {
-  background: rgba(245,166,35,0.15); border: 1px solid rgba(245,166,35,0.35);
-  color: #fff; font-size: 11px; font-weight: 600;
-  padding: 6px 10px; border-radius: var(--radius-xs);
-  text-align: left; transition: background 0.15s;
-}
-.dev-btn:hover { background: rgba(245,166,35,0.3); }
-.dev-control {
-  width: 100%; border: 1px solid rgba(245,166,35,0.35);
-  border-radius: var(--radius-xs); padding: 6px 8px;
-  background: #202B49; color: #fff; font-size: 11px;
-}
-.dev-check {
-  display: flex; align-items: center; gap: 7px;
-  color: #fff; font-size: 11px; cursor: pointer;
-}
-.dev-toggle {
-  position: fixed; bottom: 136px; right: 12px; z-index: 10000;
-  background: var(--navy); color: var(--gold);
-  border: 1px solid var(--gold); border-radius: 50%;
-  width: 36px; height: 36px; font-size: 14px;
-  display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
-}
-
-/* ============================================================
    FUNNEL CONTAINER
    ============================================================ */
 .funnel-wrap {
@@ -580,36 +540,6 @@ textarea.input-field { resize: vertical; min-height: 110px; line-height: 1.55; }
 </head>
 <body>
 
-<!-- ===== DEV TOOLBAR ===== -->
-<button class="dev-toggle" onclick="toggleDevBar()" title="Dev tools">🛠</button>
-<div id="dev-toolbar" style="display:none">
-  <div class="dev-label">🛠 Dev Shortcuts</div>
-  <label class="dev-check">
-    <input type="checkbox" id="dev-skip-generation" onchange="setSkipGeneration(this.checked)">
-    Skip music generation
-  </label>
-  <select id="dev-country" class="dev-control" onchange="setTestCountry(this.value)">
-    <option value="">Auto location</option>
-    <option value="ZA">South Africa — ZAR</option>
-    <option value="PH">Philippines — PHP</option>
-    <option value="GB">United Kingdom — GBP</option>
-    <option value="US">United States — USD</option>
-    <option value="CA">Canada — CAD</option>
-    <option value="AU">Australia — AUD</option>
-    <option value="DEFAULT">Other — USD</option>
-  </select>
-  <button class="dev-btn" onclick="devGoto(1)">→ Step 1 (Info)</button>
-  <button class="dev-btn" onclick="devGoto(4)">→ Step 4 (Loading)</button>
-  <button class="dev-btn" onclick="devOpenEmailModal()">→ Email Modal</button>
-  <button class="dev-btn" onclick="devGoto(8)">→ Step 8 (Preview)</button>
-  <button class="dev-btn" onclick="devShowPreviewReady()">→ Preview Ready</button>
-  <button class="dev-btn" onclick="devShowPreviewDone()">→ Preview Listened</button>
-  <button class="dev-btn" onclick="devGoto(12)">→ Step 12 (Plans)</button>
-  <button class="dev-btn" onclick="devGoto(14)">→ Step 14 (Checkout)</button>
-  <button class="dev-btn" onclick="devGoto('success')">→ Success</button>
-  <button class="dev-btn" onclick="devSimPayment()">→ Simulate Payment</button>
-</div>
-
 <!-- ===== MAIN FUNNEL ===== -->
 <div class="funnel-wrap">
 
@@ -910,10 +840,10 @@ const CONFIG = {
   PUBLIC_CONFIG_URL:     './callback.php?action=public-config',
   TRACK_URL:             'https://script.google.com/macros/s/AKfycbzHj5zAYO3BdjrPBcvB3iLHO-YN7_TtH5uAQeFlCjshQZRUb6DuIuGd32gbWuo0I_nNBQ/exec',
   STRIPE_PK:             '',
-  DEMO_AUDIO_URL:        'https://pub-72b0dbedb0e64e0095ae1060b289f1db.r2.dev/musica-final.mp3',
-  SKIP_GENERATION:       false, // true = skip API calls (dev mode)
-  SKIP_PAYMENT:          false, // true = simulate payment (local development only)
-  FORCE_COUNTRY:         '',
+  FALLBACK_AUDIO_URL:    './entregavel.mp3',
+  SKIP_GENERATION:       false,
+  SKIP_PAYMENT:          false,
+  FB_PIXEL_ID:           '',
 };
 
 // ============================================================
@@ -945,10 +875,7 @@ const PRICE_TABLE = {
   DEFAULT: { currency: 'usd', amount: 900, symbol: '$', display: '$9' }
 };
 
-const BUMP_AMOUNTS = {
-  style: 299,
-  video: 499,
-};
+const BUMP_PERCENTAGES = { style: 0.30, video: 0.50 };
 
 const state = {
   sessaoId:     uuid(),
@@ -965,6 +892,11 @@ const state = {
   pricing:      { ...PRICE_TABLE.DEFAULT },
   purchaseDone: false,
   stripeReady:  false,
+  geo:          '',
+  loadingPct:   0,
+  previewStartedAt: 0,
+  previewSeconds: 0,
+  pageStartedAt: Date.now(),
 };
 
 // ============================================================
@@ -986,21 +918,26 @@ function getOrderTotalMinor() {
   const bumpTotal = Object.values(state.bumps).reduce((sum, amount) => sum + amount, 0);
   return state.pricing.amount + bumpTotal;
 }
+function getBumpAmount(id) {
+  return Math.round(state.pricing.amount * (BUMP_PERCENTAGES[id] || 0));
+}
 async function detectCountryAndPrice() {
-  let countryCode = CONFIG.FORCE_COUNTRY;
-  if (!countryCode) {
-    try {
-      const response = await fetch('https://get.geojs.io/v1/ip/geo.json');
-      if (!response.ok) throw new Error(`Geo lookup failed (${response.status})`);
-      const data = await response.json();
-      countryCode = data.country_code || data.country || '';
-    } catch (error) {
-      console.warn('[GEO] Using default USD pricing:', error);
-    }
+  let countryCode = '';
+  try {
+    const response = await fetch('https://get.geojs.io/v1/ip/geo.json');
+    if (!response.ok) throw new Error(`Geo lookup failed (${response.status})`);
+    const data = await response.json();
+    countryCode = data.country_code || data.country || '';
+    state.geo = [data.city, data.region].filter(Boolean).join(' - ');
+  } catch (error) {
+    console.warn('[GEO] Using default USD pricing:', error);
   }
 
   state.countryCode = String(countryCode || 'DEFAULT').toUpperCase();
   state.pricing = { ...getPriceForCountry(state.countryCode) };
+  Object.keys(state.bumps).forEach(id => {
+    state.bumps[id] = getBumpAmount(id);
+  });
   document.querySelectorAll('[data-price-base]').forEach(el => {
     el.textContent = state.pricing.display;
   });
@@ -1009,7 +946,7 @@ async function detectCountryAndPrice() {
   });
   document.querySelectorAll('[data-bump-price]').forEach(el => {
     const id = el.dataset.bumpPrice;
-    el.textContent = `+${formatMinorAmount(BUMP_AMOUNTS[id] || 0)}`;
+    el.textContent = `+${formatMinorAmount(getBumpAmount(id))}`;
   });
   updateTotal();
   populateCheckoutSummary();
@@ -1111,6 +1048,7 @@ async function handleContinue() {
   const s = state.currentStep;
   if (!isValid(s)) return;
   if (s === 1) {
+    track({ botao: 'sim' });
     startLoading();
     return;
   }
@@ -1141,6 +1079,7 @@ function onAgeInput(val) {
     $('milestone-badge').classList.remove('show');
   }
   updateStickyBtn(1);
+  trackDebounced({ idade: state.age || '' });
 }
 
 function onMessageInput(val) {
@@ -1189,12 +1128,17 @@ function startLoading() {
 }
 
 function applyLoadingPct(pct) {
+  state.loadingPct = pct;
   $('loading-pct').textContent = pct + '%';
   $('gold-fill').style.width = pct + '%';
   const dotIdx = Math.min(Math.floor(pct / 20), 4);
   for (let i = 0; i <= 4; i++) {
     const d = $('ldot-' + i);
     if (d) d.className = 'ldot' + (i <= dotIdx ? ' active' : '');
+  }
+  if (pct === 100 || pct - (state._lastTrackedLoading || 0) >= 10) {
+    state._lastTrackedLoading = pct;
+    track({ loading: pct });
   }
 }
 
@@ -1258,7 +1202,7 @@ async function fireGeneration() {
   if (CONFIG.SKIP_GENERATION) {
     // Dev shortcut: use the fallback audio without contacting Kie.ai.
     await sleep(700);
-    state.audioUrl = CONFIG.DEMO_AUDIO_URL;
+    state.audioUrl = CONFIG.FALLBACK_AUDIO_URL;
     finishLoading();
     return;
   }
@@ -1280,17 +1224,18 @@ async function fireGeneration() {
     if (!res.ok || data.error) throw new Error(data.error || `Generation failed (${res.status})`);
     if (data.taskId) {
       state.audioTaskId = data.taskId;
-      track({ taskId: data.taskId });
+      track();
       pollResult(data.taskId);
     } else if (data.audioUrl) {
       state.audioUrl = data.audioUrl;
+      track({ link: state.audioUrl });
       finishLoading();
     } else {
       throw new Error('Kie response did not include a taskId');
     }
   } catch(err) {
     console.warn('[GEN] Failed:', err);
-    state.audioUrl = CONFIG.DEMO_AUDIO_URL;
+    state.audioUrl = CONFIG.FALLBACK_AUDIO_URL;
     state.lyrics   = demoLyrics();
     finishLoading();
   }
@@ -1308,12 +1253,13 @@ async function pollResult(taskId) {
         clearInterval(iv);
         state.audioUrl = data.audioUrl;
         state.lyrics   = data.lyrics || state.lyrics;
+        track({ link: state.audioUrl });
         finishLoading();
       }
     } catch {}
     if (tries >= MAX) {
       clearInterval(iv);
-      state.audioUrl = CONFIG.DEMO_AUDIO_URL;
+      state.audioUrl = CONFIG.FALLBACK_AUDIO_URL;
       finishLoading();
     }
   }, 5000);
@@ -1334,6 +1280,24 @@ function demoLyrics() {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+function initializeFacebookPixel() {
+  if (!CONFIG.FB_PIXEL_ID || typeof window.fbq === 'function') return;
+  const fbq = window.fbq = function() {
+    fbq.callMethod ? fbq.callMethod.apply(fbq, arguments) : fbq.queue.push(arguments);
+  };
+  if (!window._fbq) window._fbq = fbq;
+  fbq.push = fbq;
+  fbq.loaded = true;
+  fbq.version = '2.0';
+  fbq.queue = [];
+  const script = document.createElement('script');
+  script.async = true;
+  script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  document.head.appendChild(script);
+  fbq('init', CONFIG.FB_PIXEL_ID);
+  fbq('track', 'PageView');
+}
 
 // ============================================================
 // STEP 8 — PREVIEW
@@ -1371,6 +1335,8 @@ let viewOnceOpened = false;
 function abrirViewOnce() {
   if (viewOnceOpened) return;
   viewOnceOpened = true;
+  state.previewStartedAt = Date.now();
+  track({ preview: 'sim' });
 
   document.querySelectorAll('audio').forEach(a => { try { a.pause(); a.currentTime = 0; } catch {} });
 
@@ -1394,7 +1360,7 @@ function abrirViewOnce() {
 
   const audio = $('vo-audio');
   const prog  = $('vo-progress');
-  audio.src = state.audioUrl || CONFIG.DEMO_AUDIO_URL;
+  audio.src = state.audioUrl || CONFIG.FALLBACK_AUDIO_URL;
   audio.play().catch(() => {});
 
   function fmt(s) { return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`; }
@@ -1404,22 +1370,24 @@ function abrirViewOnce() {
   };
   audio.onloadedmetadata = () => { $('vo-dur').textContent = fmt(audio.duration); };
   audio.onended = () => {
+    state.previewSeconds = Math.round((Date.now() - state.previewStartedAt) / 1000);
     overlay.remove();
     document.body.classList.remove('modal-open');
-    track({ preview_listened: 'yes' });
+    track({ timer: state.previewSeconds });
     renderPreviewReady();
   };
 
   // Safety: auto-close after 5 min
   setTimeout(() => {
     if ($('viewonce-overlay')) {
+      state.previewSeconds = Math.round((Date.now() - state.previewStartedAt) / 1000);
       overlay.remove();
       document.body.classList.remove('modal-open');
+      track({ timer: state.previewSeconds });
       renderPreviewReady();
     }
   }, 300000);
 
-  track({ preview_opened: 'yes' });
 }
 
 // ============================================================
@@ -1432,8 +1400,9 @@ function populatePricingSummary() {
 function toggleBump(el, id) {
   const checked = !el.classList.contains('checked');
   el.classList.toggle('checked', checked);
-  if (checked) { state.bumps[id] = BUMP_AMOUNTS[id] || 0; } else { delete state.bumps[id]; }
+  if (checked) { state.bumps[id] = getBumpAmount(id); } else { delete state.bumps[id]; }
   updateTotal();
+  track();
 }
 
 function updateTotal() {
@@ -1444,7 +1413,7 @@ function goToCheckout() {
   goToStep(14);
   $('checkout-honoree').textContent = state.name;
   populateCheckoutSummary();
-  track({ step: 'checkout' });
+  track({ checkout: 'sim' });
 }
 
 function populateCheckoutSummary() {
@@ -1526,6 +1495,10 @@ async function initStripe() {
       element.on('blur', () => $(container).classList.remove('focused'));
       element.on('change', evt => {
         cardFieldComplete[key] = evt.complete;
+        if (cardFieldComplete.number && cardFieldComplete.expiry && cardFieldComplete.cvc && !state._cardTracked) {
+          state._cardTracked = true;
+          track({ card: 'sim' });
+        }
         const errEl = $('stripe-errors');
         if (evt.error) {
           errEl.textContent = evt.error.message;
@@ -1612,6 +1585,7 @@ async function handlePayment() {
     });
 
     if (error) {
+      track({ transaction: `${error.decline_code || error.code || 'card_error'}: ${error.message || 'Payment failed'}` });
       $('stripe-errors').textContent = getPaymentErrorMessage(error);
       $('stripe-errors').style.display = 'block';
       $('pay-btn-text').textContent = 'Pay & Get My Song';
@@ -1620,10 +1594,11 @@ async function handlePayment() {
     }
 
     if (paymentIntent.status === 'succeeded') {
-      paymentSuccess();
+      paymentSuccess(paymentIntent);
     }
   } catch(err) {
     console.error('[PAYMENT]', err);
+    track({ transaction: `server_error: ${err.message || 'Payment failed'}` });
     $('stripe-errors').textContent = err.message || 'Payment could not be processed. Please try again.';
     $('stripe-errors').style.display = 'block';
     $('pay-btn-text').textContent = 'Try Again';
@@ -1631,13 +1606,27 @@ async function handlePayment() {
   }
 }
 
-function paymentSuccess() {
+function paymentSuccess(paymentIntent = null) {
   if (state.purchaseDone) return;
   state.purchaseDone = true;
+
+  let populatedFacebook = '';
+  if (typeof window.fbq === 'function') {
+    try {
+      window.fbq('track', 'Purchase', {
+        value: getOrderTotalMinor() / 100,
+        currency: state.pricing.currency.toUpperCase()
+      });
+      populatedFacebook = 'sim';
+    } catch {}
+  }
+
   track({
-    purchase: 'yes',
-    value: getOrderTotalMinor() / 100,
-    currency: state.pricing.currency.toUpperCase()
+    transaction: paymentIntent
+      ? `${paymentIntent.status}:${paymentIntent.id}`
+      : 'succeeded',
+    purchase: 'sim',
+    populoufb: populatedFacebook
   });
   goToStep('success');
   $('sticky-btn').style.display = 'none';
@@ -1645,129 +1634,97 @@ function paymentSuccess() {
   $('success-name').textContent  = state.name;
   $('success-song-name').textContent = state.name + "'s Birthday Song";
 
-  const audioUrl = state.audioUrl || CONFIG.DEMO_AUDIO_URL;
+  const audioUrl = state.audioUrl || CONFIG.FALLBACK_AUDIO_URL;
   $('success-audio').src = audioUrl;
   $('success-dl').href   = audioUrl;
   $('success-dl').download = state.name + ' Birthday Song.mp3';
 
-  if (state.bumps['video']) $('success-video-cta').classList.remove('hidden');
+  if (state.bumps['style']) $('success-video-cta').classList.remove('hidden');
 }
 
 // ============================================================
 // TRACKING
 // ============================================================
-async function track(payload) {
-  if (!CONFIG.TRACK_URL) return;
+const trackingState = {};
+
+function buildTrackingPayload(payload = {}) {
+  Object.assign(trackingState, payload);
   const utms = new URLSearchParams(location.search);
+  const bumpNames = { style: 'video', video: 'one more music' };
+  const startedAt = new Date(state.pageStartedAt);
+  const dateParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(startedAt);
+  const timeParts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  }).format(startedAt);
+  const livePreviewSeconds = state.previewStartedAt
+    ? Math.round((Date.now() - state.previewStartedAt) / 1000)
+    : 0;
+
+  return {
+    data: dateParts,
+    hora: timeParts,
+    sessao: state.sessaoId,
+    campaign: utms.get('utm_campaign') || '',
+    medium: utms.get('utm_medium') || '',
+    content: utms.get('utm_content') || '',
+    term: utms.get('utm_term') || '',
+    ip: state.geo,
+    name: state.name,
+    idade: state.age || '',
+    msg: state.message,
+    botao: trackingState.botao || '',
+    loading: state.loadingPct || '',
+    email: state.email,
+    preview: trackingState.preview || '',
+    link: state.audioUrl || '',
+    checkout: trackingState.checkout || '',
+    orderbump: Object.keys(state.bumps).map(id => bumpNames[id] || id).join(', '),
+    valor: (getOrderTotalMinor() / 100).toFixed(2),
+    moeda: state.pricing.currency.toUpperCase(),
+    card: trackingState.card || '',
+    transaction: trackingState.transaction || '',
+    timer: state.previewSeconds || livePreviewSeconds || '',
+    purchase: trackingState.purchase || '',
+    populoufb: trackingState.populoufb || '',
+    timestamp: Math.round((Date.now() - state.pageStartedAt) / 1000),
+  };
+}
+
+async function track(payload = {}) {
+  if (!CONFIG.TRACK_URL) return;
   try {
     await fetch(CONFIG.TRACK_URL, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        sessao:       state.sessaoId,
-        utm_campaign: utms.get('utm_campaign') || '',
-        utm_medium:   utms.get('utm_medium')   || '',
-        utm_content:  utms.get('utm_content')  || '',
-        timestamp:    Math.round(Date.now() / 1000),
-        ...payload
-      })
+      body: JSON.stringify(buildTrackingPayload(payload)),
+      keepalive: true,
     });
   } catch {}
-}
-
-// ============================================================
-// DEV TOOLS
-// ============================================================
-function toggleDevBar() {
-  const bar = $('dev-toolbar');
-  bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
-}
-
-function setSkipGeneration(enabled) {
-  CONFIG.SKIP_GENERATION = Boolean(enabled);
-  localStorage.setItem('birthday_skip_music', enabled ? '1' : '0');
-}
-
-function setTestCountry(countryCode) {
-  CONFIG.FORCE_COUNTRY = countryCode === 'DEFAULT' ? 'DEFAULT' : countryCode;
-  if (countryCode) localStorage.setItem('birthday_test_country', countryCode);
-  else localStorage.removeItem('birthday_test_country');
-  detectCountryAndPrice();
-}
-
-function devFillState() {
-  state.name    = 'Sarah';
-  state.age     = 30;
-  state.message = 'She loves yoga, coffee and her golden retriever Max.';
-  state.email   = 'test@example.com';
-  state.audioUrl= CONFIG.DEMO_AUDIO_URL;
-  state.lyrics  = demoLyrics();
-  const ageEl = $('age-input');
-  if (ageEl) ageEl.value = 30;
-  const nameEl = $('honoree-name');
-  if (nameEl) nameEl.value = 'Sarah';
-}
-
-function devGoto(step) {
-  devFillState();
-  goToStep(step);
-  $('dev-toolbar').style.display = 'none';
-}
-
-function devOpenEmailModal() {
-  devFillState();
-  startLoading();
-  setTimeout(openEmailModal, 400);
-  $('dev-toolbar').style.display = 'none';
-}
-
-function devShowPreviewReady() {
-  devFillState();
-  goToStep(8);
-  renderPreviewIdle();
-  $('dev-toolbar').style.display = 'none';
-}
-
-function devShowPreviewDone() {
-  devFillState();
-  goToStep(8);
-  renderPreviewReady();
-  $('dev-toolbar').style.display = 'none';
-}
-
-function devSimPayment() {
-  devFillState();
-  paymentSuccess();
-  $('dev-toolbar').style.display = 'none';
 }
 
 // ============================================================
 // INIT
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
-  const params = new URLSearchParams(location.search);
-  const queryCountry = (params.get('country') || '').toUpperCase();
-  const savedCountry = localStorage.getItem('birthday_test_country') || '';
-  const supportedCountries = ['ZA', 'PH', 'GB', 'US', 'CA', 'AU', 'DEFAULT'];
-  if (queryCountry) {
-    CONFIG.FORCE_COUNTRY = supportedCountries.includes(queryCountry) ? queryCountry : 'DEFAULT';
-  } else if (supportedCountries.includes(savedCountry)) {
-    CONFIG.FORCE_COUNTRY = savedCountry;
-  }
-
-  CONFIG.SKIP_GENERATION =
-    params.get('skipMusic') === '1' ||
-    localStorage.getItem('birthday_skip_music') === '1';
-
-  const countryControl = $('dev-country');
-  const skipControl = $('dev-skip-generation');
-  if (countryControl) countryControl.value = CONFIG.FORCE_COUNTRY;
-  if (skipControl) skipControl.checked = CONFIG.SKIP_GENERATION;
-
+  initializeFacebookPixel();
   updateStickyBtn(1);
   updateProgressBar(1);
-  detectCountryAndPrice();
-  track({ page: 'birthday_funnel_en' });
+  detectCountryAndPrice().finally(() => track());
+});
+
+window.addEventListener('pagehide', () => {
+  if (!CONFIG.TRACK_URL) return;
+  try {
+    navigator.sendBeacon(
+      CONFIG.TRACK_URL,
+      new Blob([JSON.stringify(buildTrackingPayload())], { type: 'text/plain' })
+    );
+  } catch {}
 });
 </script>
 </body>

@@ -94,7 +94,7 @@ if (($_GET['action'] ?? '') === 'create-payment-intent') {
         'zar' => 9700, 'php' => 19700, 'usd' => 900,
         'cad' => 900, 'gbp' => 900, 'aud' => 900,
     ];
-    $bumpAmounts = ['style' => 299, 'video' => 499];
+    $bumpPercentages = ['style' => 0.30, 'video' => 0.50];
     $currency = strtolower(trim((string)($input['currency'] ?? '')));
     $amount = (int)($input['amount'] ?? 0);
     $email = filter_var((string)($input['email'] ?? ''), FILTER_VALIDATE_EMAIL);
@@ -112,8 +112,8 @@ if (($_GET['action'] ?? '') === 'create-payment-intent') {
     $expectedAmount = $priceByCurrency[$currency];
     $validBumps = [];
     foreach ($bumps as $bump) {
-        if (isset($bumpAmounts[$bump])) {
-            $expectedAmount += $bumpAmounts[$bump];
+        if (isset($bumpPercentages[$bump])) {
+            $expectedAmount += (int)round($priceByCurrency[$currency] * $bumpPercentages[$bump]);
             $validBumps[] = $bump;
         }
     }

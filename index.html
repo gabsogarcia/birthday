@@ -838,12 +838,12 @@ const CONFIG = {
   STATUS_URL:            './resultado.php',
   PAYMENT_URL:           './callback.php?action=create-payment-intent',
   PUBLIC_CONFIG_URL:     './callback.php?action=public-config',
-  TRACK_URL:             'https://script.google.com/macros/s/AKfycbzHj5zAYO3BdjrPBcvB3iLHO-YN7_TtH5uAQeFlCjshQZRUb6DuIuGd32gbWuo0I_nNBQ/exec',
+  TRACK_URL:             'https://script.google.com/macros/s/AKfycbxFRiqEP9iNAc77N13XD1OgparMlqGETCr_96OJRgvUv0q3OSM9qnwLAcAmt7PMfibL/exec',
   STRIPE_PK:             '',
   FALLBACK_AUDIO_URL:    './entregavel.mp3',
   SKIP_GENERATION:       false,
   SKIP_PAYMENT:          false,
-  FB_PIXEL_ID:           '',
+  FB_PIXEL_IDS:          ['1910242892872750', '25528587420142935'],
 };
 
 // ============================================================
@@ -1282,7 +1282,7 @@ function demoLyrics() {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function initializeFacebookPixel() {
-  if (!CONFIG.FB_PIXEL_ID || typeof window.fbq === 'function') return;
+  if (!Array.isArray(CONFIG.FB_PIXEL_IDS) || !CONFIG.FB_PIXEL_IDS.length || typeof window.fbq === 'function') return;
   const fbq = window.fbq = function() {
     fbq.callMethod ? fbq.callMethod.apply(fbq, arguments) : fbq.queue.push(arguments);
   };
@@ -1295,7 +1295,7 @@ function initializeFacebookPixel() {
   script.async = true;
   script.src = 'https://connect.facebook.net/en_US/fbevents.js';
   document.head.appendChild(script);
-  fbq('init', CONFIG.FB_PIXEL_ID);
+  CONFIG.FB_PIXEL_IDS.forEach(pixelId => fbq('init', pixelId));
   fbq('track', 'PageView');
 }
 
